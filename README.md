@@ -2,7 +2,7 @@
 
 Authentication and authorization for AI agents using [AMP](https://agentmessaging.org) identity.
 
-AID lets AI agents authenticate with OAuth 2.0 servers using their Ed25519 cryptographic identity — no passwords, no API keys, no secrets to rotate. The agent presents a signed Agent Card, proves possession of its private key, and receives a standard JWT token.
+AID lets AI agents authenticate with OAuth 2.0 servers using their Ed25519 cryptographic identity — no passwords, no API keys, no secrets to rotate. The agent presents a signed Agent Identity, proves possession of its private key, and receives a standard JWT token.
 
 ## How It Works
 
@@ -19,8 +19,8 @@ AID lets AI agents authenticate with OAuth 2.0 servers using their Ed25519 crypt
        │                          │                          │
        │  2. Request token        │                          │
        │  POST /oauth/token       │                          │
-       │  grant_type=urn:amp:agent-card                      │
-       │  + signed Agent Card     │                          │
+       │  grant_type=urn:aid:agent-identity                      │
+       │  + signed Agent Identity     │                          │
        │  + proof of possession   │                          │
        │─────────────────────────>│                          │
        │                          │                          │
@@ -33,14 +33,14 @@ AID lets AI agents authenticate with OAuth 2.0 servers using their Ed25519 crypt
 ```
 
 1. **Register** — Agent sends its public key to the auth server (admin-authorized, one-time)
-2. **Authenticate** — Agent presents a signed Agent Card + proof of possession
+2. **Authenticate** — Agent presents a signed Agent Identity + proof of possession
 3. **Receive JWT** — Auth server verifies the signature and issues a scoped RS256 JWT
 4. **Use JWT** — Agent calls any API that validates JWTs (standard OAuth 2.0)
 
 ## Prerequisites
 
 - [AMP](https://github.com/agentmessaging/claude-plugin) identity initialized (`amp-init --auto`)
-- An OAuth 2.0 auth server that supports the `urn:amp:agent-card` grant type
+- An OAuth 2.0 auth server that supports the `urn:aid:agent-identity` grant type
 - `jq`, `curl`, `openssl` (OpenSSL 3.x for Ed25519 support)
 
 ## Installation
@@ -115,7 +115,7 @@ aid-register \
 
 ### `aid-token` — Request a JWT Token
 
-Authenticates using your Agent Card and returns a scoped RS256 JWT.
+Authenticates using your Agent Identity and returns a scoped RS256 JWT.
 
 ```bash
 aid-token --auth <url> [options]
@@ -164,23 +164,23 @@ AID caches tokens locally at `~/.agent-messaging/agents/<name>/tokens/`. Cached 
 
 ## OAuth 2.0 Grant Type
 
-AID uses a custom OAuth 2.0 grant type: `urn:amp:agent-card`
+AID uses a custom OAuth 2.0 grant type: `urn:aid:agent-identity`
 
 **Token request:**
 ```
 POST /oauth/token
 Content-Type: application/x-www-form-urlencoded
 
-grant_type=urn%3Aamp%3Aagent-card
-&agent_card=<base64url-encoded-signed-agent-card>
+grant_type=urn%3Aamp%3Aagent-identity
+&agent_identity=<base64url-encoded-signed-agent-identity>
 &proof=<base64url-encoded-proof-of-possession>
 &scope=files%3Aread+files%3Awrite
 ```
 
-**Agent Card** (JSON, base64url-encoded):
+**Agent Identity** (JSON, base64url-encoded):
 ```json
 {
-  "amp_agent_card": "1.0",
+  "aid_version": "1.0",
   "address": "agent-name@org.local",
   "alias": "agent-name",
   "public_key": "-----BEGIN PUBLIC KEY-----\n...",
@@ -194,7 +194,7 @@ grant_type=urn%3Aamp%3Aagent-card
 
 **Proof of Possession:**
 ```
-sign_input = "amp-token-exchange\n{unix_timestamp}\n{auth_server_url}"
+sign_input = "aid-token-exchange\n{unix_timestamp}\n{auth_server_url}"
 proof = base64url(ed25519_sign(sign_input) + timestamp_string)
 ```
 
@@ -205,7 +205,7 @@ The proof has a 5-minute validity window to prevent replay attacks.
 | Error | Meaning | Fix |
 |-------|---------|-----|
 | `agent_not_registered` | Agent not registered with this server | Run `aid-register` |
-| `invalid_grant` | Agent Card signature invalid | Check AMP keys match registration |
+| `invalid_grant` | Agent Identity signature invalid | Check AMP keys match registration |
 | `invalid_proof` | Proof of possession failed | Check system clock sync |
 | `invalid_scope` | Requested scopes exceed permissions | Try without `--scope` |
 | `agent_suspended` | Agent has been suspended | Contact admin |
@@ -224,9 +224,9 @@ The proof has a 5-minute validity window to prevent replay attacks.
 To support AID, your OAuth 2.0 server needs:
 
 1. **Agent Registration endpoint** — `POST /agent_registrations` accepting public key, address, fingerprint
-2. **Token endpoint** — `POST /oauth/token` supporting `grant_type=urn:amp:agent-card`
-3. **Ed25519 verification** — validate Agent Card signatures and proof of possession
-4. **OIDC discovery** — advertise `urn:amp:agent-card` in `grant_types_supported`
+2. **Token endpoint** — `POST /oauth/token` supporting `grant_type=urn:aid:agent-identity`
+3. **Ed25519 verification** — validate Agent Identity signatures and proof of possession
+4. **OIDC discovery** — advertise `urn:aid:agent-identity` in `grant_types_supported`
 
 See the [23blocks Auth API](https://github.com/23blocks/gateway-api) for a reference implementation.
 

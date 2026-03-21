@@ -4,7 +4,7 @@
 # =============================================================================
 #
 # Request an API token from a 23blocks Auth server using AMP identity.
-# The agent presents its Agent Card + proof of possession and receives
+# The agent presents its Agent Identity + proof of possession and receives
 # an RS256 JWT that works with any 23blocks API (or any JWT-validating API).
 #
 # Usage:
@@ -210,12 +210,12 @@ if [ "$NO_CACHE" = false ]; then
 fi
 
 # =============================================================================
-# Build Agent Card
+# Build Agent Identity
 # =============================================================================
 
 PUBLIC_KEY_PEM=$(cat "$PUBLIC_KEY")
 
-AGENT_CARD=$(jq -n \
+AGENT_IDENTITY=$(jq -n \
     --arg version "1.0" \
     --arg address "$AMP_ADDRESS" \
     --arg alias "$AMP_AGENT_NAME" \
@@ -225,7 +225,7 @@ AGENT_CARD=$(jq -n \
     --arg issued_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     --arg expires_at "$(date -u -v+6m +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u -d '+6 months' +%Y-%m-%dT%H:%M:%SZ 2>/dev/null || date -u +%Y-%m-%dT%H:%M:%SZ)" \
     '{
-        amp_agent_card: $version,
+        aid_version: $version,
         address: $address,
         alias: $alias,
         public_key: $public_key,
@@ -235,18 +235,18 @@ AGENT_CARD=$(jq -n \
         expires_at: $expires_at
     }')
 
-# Sign the Agent Card (sign everything except the signature field itself)
-CARD_SIGNATURE=$(sign_message "$AGENT_CARD")
-if [ -z "$CARD_SIGNATURE" ]; then
-    echo "Error: Failed to sign Agent Card" >&2
+# Sign the Agent Identity (sign everything except the signature field itself)
+IDENTITY_SIGNATURE=$(sign_message "$AGENT_IDENTITY")
+if [ -z "$IDENTITY_SIGNATURE" ]; then
+    echo "Error: Failed to sign Agent Identity" >&2
     exit 1
 fi
 
-# Add signature to card (use urlsafe base64)
-SIGNED_CARD=$(echo "$AGENT_CARD" | jq --arg sig "$CARD_SIGNATURE" '. + {signature: $sig}')
+# Add signature to identity (use urlsafe base64)
+SIGNED_IDENTITY=$(echo "$AGENT_IDENTITY" | jq --arg sig "$IDENTITY_SIGNATURE" '. + {signature: $sig}')
 
-# Base64url encode the signed card
-AGENT_CARD_B64=$(echo -n "$SIGNED_CARD" | base64 | tr '+/' '-_' | tr -d '=\n')
+# Base64url encode the signed identity
+AGENT_IDENTITY_B64=$(echo -n "$SIGNED_IDENTITY" | base64 | tr '+/' '-_' | tr -d '=\n')
 
 # =============================================================================
 # Build Proof of Possession
@@ -257,7 +257,7 @@ TIMESTAMP=$(date +%s)
 # The issuer is the auth server URL
 AUTH_ISSUER="$AUTH_URL"
 
-SIGN_INPUT="amp-token-exchange
+SIGN_INPUT="aid-token-exchange
 ${TIMESTAMP}
 ${AUTH_ISSUER}"
 
@@ -285,7 +285,7 @@ PROOF_B64=$(
 TOKEN_URL="${AUTH_URL}/oauth/token"
 
 # Build form body
-FORM_DATA="grant_type=urn%3Aamp%3Aagent-card&agent_card=${AGENT_CARD_B64}&proof=${PROOF_B64}"
+FORM_DATA="grant_type=urn%3Aaid%3Aagent-identity&agent_identity=${AGENT_IDENTITY_B64}&proof=${PROOF_B64}"
 if [ -n "$SCOPE" ]; then
     ENCODED_SCOPE=$(echo -n "$SCOPE" | jq -sRr @uri)
     FORM_DATA="${FORM_DATA}&scope=${ENCODED_SCOPE}"
@@ -353,7 +353,7 @@ else
 
         case "$ERROR" in
             invalid_grant)
-                echo "  → Agent Card signature may be invalid or expired." >&2
+                echo "  → Agent Identity signature may be invalid or expired." >&2
                 echo "    Check that your AMP keys match the registration." >&2
                 ;;
             invalid_proof)

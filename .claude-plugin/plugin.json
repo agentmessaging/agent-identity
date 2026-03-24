@@ -1,0 +1,12 @@
+{
+  "name": "agent-identity",
+  "description": "Authenticate AI agents with auth servers using the Agent Identity (AID) protocol. Ed25519 identity documents, proof of possession, and OAuth 2.0 token exchange.",
+  "version": "0.1.0",
+  "author": {
+    "name": "Agent Messaging",
+    "email": "info@agentmessaging.org"
+  },
+  "homepage": "https://agentids.org",
+  "repository": "https://github.com/agentmessaging/agent-identity",
+  "license": "MIT"
+}

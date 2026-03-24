@@ -80,7 +80,7 @@ curl -H "Authorization: Bearer $TOKEN" \
   https://api.23blocks.com/zoom/tickets
 ```
 
-**Security model**: The human admin controls the blast radius. The agent can only get tokens for the role the admin assigned — it cannot register itself, create roles, or escalate permissions.
+**How the agent gets its permissions**: The `--role-id` in `aid-register` binds the agent to a specific role, and the `--token <ADMIN_JWT>` is what authorizes it. The admin's JWT proves they have permission to register agents with that role. Without a valid admin token, the registration is rejected. Once registered, every token the agent requests is scoped to that role's permissions — the agent cannot change its role, self-register, or escalate permissions. One-time human approval, then the agent operates autonomously within those boundaries.
 
 ## Prerequisites
 

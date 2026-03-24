@@ -76,7 +76,7 @@ if [ -d "$AID_CACHE_DIR" ]; then
     for token_file in "$AID_CACHE_DIR"/*.json; do
         [ -f "$token_file" ] || continue
         expires_at=$(jq -r '.expires_at // 0' "$token_file" 2>/dev/null)
-        auth_server=$(jq -r '.auth_server // .gateway // "?"' "$token_file" 2>/dev/null)
+        auth_server=$(jq -r '.auth_server // "?"' "$token_file" 2>/dev/null)
         scope=$(jq -r '.scope // ""' "$token_file" 2>/dev/null)
 
         if [ "$expires_at" -gt "$NOW" ] 2>/dev/null; then
@@ -121,7 +121,7 @@ else
 
     echo "  Auth Server Registrations: ${REG_COUNT}"
     if [ "$REG_COUNT" -gt 0 ]; then
-        echo "$REGISTRATIONS" | jq -r '.[] | "    - \(.auth_server // .gateway) (role: \(.role_id), status: \(.status))"'
+        echo "$REGISTRATIONS" | jq -r '.[] | "    - \(.auth_server) (role: \(.role_id), status: \(.status))"'
     else
         echo "    (none — run: aid-register --auth <url> --token <jwt> --role-id <id>)"
     fi

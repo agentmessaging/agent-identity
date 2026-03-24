@@ -228,13 +228,13 @@ To support AID, your OAuth 2.0 server needs:
 3. **Ed25519 verification** — validate Agent Identity signatures and proof of possession
 4. **OIDC discovery** — advertise `urn:aid:agent-identity` in `grant_types_supported`
 
-See the [23blocks Auth API](https://github.com/23blocks/gateway-api) for a reference implementation.
+See the [23blocks Authentication API](https://github.com/23blocks/blocks/gateway/api) for a reference implementation.
 
 ## Related Projects
 
 - [Agent Messaging Protocol (AMP)](https://github.com/agentmessaging/protocol) — the identity and messaging layer AID builds on
 - [AMP Claude Plugin](https://github.com/agentmessaging/claude-plugin) — AMP integration for Claude Code
-- [23blocks Auth API](https://github.com/23blocks/gateway-api) — reference auth server with AID support
+- [23blocks Authentication API](https://github.com/23blocks/blocks/gateway/api) — reference auth server with AID support
 
 ## License
 

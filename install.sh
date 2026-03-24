@@ -3,7 +3,8 @@
 # AID Installer — Agent Identity
 # =============================================================================
 #
-# Installs AID scripts alongside your AMP installation.
+# Installs AID scripts for agent authentication. AID is self-contained
+# and works independently — no other protocols required.
 #
 # Usage:
 #   ./install.sh              # Install to ~/.local/bin (default)
@@ -32,19 +33,6 @@ echo ""
 # Check prerequisites
 echo "Checking prerequisites..."
 
-# Check for AMP
-if ! command -v amp-init.sh &>/dev/null && [ ! -f "${INSTALL_DIR}/amp-helper.sh" ]; then
-    echo -e "${YELLOW}Warning: AMP (Agent Messaging Protocol) not found.${NC}"
-    echo "  AID requires AMP for identity and cryptographic operations."
-    echo "  Install AMP first: https://github.com/agentmessaging/claude-plugin"
-    echo ""
-    read -p "Continue anyway? (y/N) " -n 1 -r
-    echo ""
-    if [[ ! $REPLY =~ ^[Yy]$ ]]; then
-        exit 1
-    fi
-fi
-
 # Check for jq
 if ! command -v jq &>/dev/null; then
     echo -e "${RED}Error: jq is required but not installed.${NC}"
@@ -58,6 +46,28 @@ if ! command -v curl &>/dev/null; then
     exit 1
 fi
 
+# Check for OpenSSL with Ed25519 support
+_has_openssl=false
+for candidate in \
+    "openssl" \
+    "/opt/homebrew/opt/openssl@3/bin/openssl" \
+    "/usr/local/opt/openssl@3/bin/openssl"; do
+    if command -v "$candidate" &>/dev/null || [ -x "$candidate" ]; then
+        ver=$("$candidate" version 2>/dev/null || true)
+        if [[ "$ver" == OpenSSL\ 3.* ]] || [[ "$ver" == OpenSSL\ 1.1.1* ]]; then
+            _has_openssl=true
+            break
+        fi
+    fi
+done
+
+if [ "$_has_openssl" != true ]; then
+    echo -e "${YELLOW}Warning: No Ed25519-capable OpenSSL found.${NC}"
+    echo "  AID requires OpenSSL 3.x for Ed25519 signing."
+    echo "  Install: brew install openssl@3 (macOS)"
+    echo ""
+fi
+
 echo -e "  ${GREEN}Prerequisites OK${NC}"
 echo ""
 
@@ -68,8 +78,10 @@ mkdir -p "$INSTALL_DIR"
 echo "Installing AID scripts to ${INSTALL_DIR}..."
 
 SCRIPTS=(
-    "aid-token.sh"
+    "aid-helper.sh"
+    "aid-init.sh"
     "aid-register.sh"
+    "aid-token.sh"
     "aid-status.sh"
 )
 
@@ -113,8 +125,14 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo -e "  ${GREEN}AID installed successfully${NC}"
 echo ""
 echo "  Quick start:"
+echo "    # 1. Initialize agent identity"
+echo "    aid-init.sh --auto"
+echo ""
+echo "    # 2. Register with an auth server"
 echo "    aid-register.sh --auth https://auth.example.com/tenant \\"
 echo "      --token <admin_jwt> --role-id 2"
+echo ""
+echo "    # 3. Get a token"
 echo "    aid-token.sh --auth https://auth.example.com/tenant"
 echo ""
 echo "  Check status:"

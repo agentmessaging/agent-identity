@@ -3,7 +3,7 @@
 # AID Status - Agent Identity Status
 # =============================================================================
 #
-# Show registered auth servers, cached tokens, and AMP identity info.
+# Show registered auth servers, cached tokens, and agent identity info.
 #
 # Usage:
 #   aid-status              # Human-readable output
@@ -13,9 +13,9 @@
 
 set -e
 
-# Source AMP helper for identity
+# Source AID helper for identity
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "${SCRIPT_DIR}/amp-helper.sh"
+source "${SCRIPT_DIR}/aid-helper.sh"
 
 FORMAT="text"
 
@@ -47,7 +47,7 @@ done
 # =============================================================================
 
 if ! is_initialized; then
-    echo "Error: AMP identity not initialized. Run: amp-init --auto" >&2
+    echo "Error: Agent identity not initialized. Run: aid-init --auto" >&2
     exit 1
 fi
 

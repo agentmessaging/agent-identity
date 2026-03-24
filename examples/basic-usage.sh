@@ -6,7 +6,7 @@
 # Demonstrates the full AID workflow: register, get token, call API.
 #
 # Prerequisites:
-#   - AMP identity initialized (amp-init --auto)
+#   - Agent identity initialized (aid-init --auto)
 #   - Access to a 23blocks Auth server (or any AID-compatible auth server)
 #   - Admin JWT token for registration
 #
@@ -26,8 +26,8 @@ echo "━━━━━━━━━━━━━━━━━━━━━━━━�
 echo ""
 
 # Step 1: Check identity
-echo "Step 1: Checking AMP identity..."
-amp-identity.sh --brief
+echo "Step 1: Checking agent identity..."
+aid-status.sh
 echo ""
 
 # Step 2: Register with auth server (one-time)

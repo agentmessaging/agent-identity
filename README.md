@@ -1,47 +1,91 @@
 # Agent Identity (AID)
 
-Authentication and authorization for AI agents using [AMP](https://agentmessaging.org) identity.
+Authentication and authorization for AI agents. AID is an independent, self-contained protocol — no other tools required.
 
 AID lets AI agents authenticate with OAuth 2.0 servers using their Ed25519 cryptographic identity — no passwords, no API keys, no secrets to rotate. The agent presents a signed Agent Identity, proves possession of its private key, and receives a standard JWT token.
 
 ## How It Works
 
 ```
-┌─────────────┐         ┌──────────────────┐         ┌─────────────┐
-│   AI Agent   │         │   Auth Server    │         │   Any API   │
-│  (Ed25519)   │         │  (OAuth 2.0)     │         │  (JWT)      │
-└──────┬───────┘         └────────┬─────────┘         └──────┬──────┘
-       │                          │                          │
-       │  1. Register (one-time)  │                          │
-       │  POST /agent_registrations                          │
-       │  {public_key, address}   │                          │
-       │─────────────────────────>│                          │
-       │                          │                          │
-       │  2. Request token        │                          │
-       │  POST /oauth/token       │                          │
-       │  grant_type=urn:aid:agent-identity                      │
-       │  + signed Agent Identity     │                          │
-       │  + proof of possession   │                          │
-       │─────────────────────────>│                          │
-       │                          │                          │
-       │  3. RS256 JWT token      │                          │
-       │<─────────────────────────│                          │
-       │                          │                          │
-       │  4. Call API with JWT    │                          │
-       │─────────────────────────────────────────────────────>│
-       │                          │                          │
+┌──────────────┐         ┌──────────────────┐         ┌─────────────┐
+│  Human Admin  │         │   Auth Server    │         │             │
+│  (23blocks)   │         │  (OAuth 2.0)     │         │             │
+└──────┬────────┘         └────────┬─────────┘         │             │
+       │                           │                    │             │
+       │  0. Create role + perms   │                    │             │
+       │──────────────────────────>│                    │             │
+       │                           │                    │             │
+┌──────┴────────┐                  │                    │   Any API   │
+│   AI Agent    │                  │                    │   (JWT)     │
+│  (Ed25519)    │                  │                    │             │
+└──────┬────────┘                  │                    │             │
+       │                           │                    │             │
+       │  1. Register (one-time)   │                    │             │
+       │  POST /agent_registrations│                    │             │
+       │  {public_key, address}    │                    │             │
+       │──────────────────────────>│                    │             │
+       │                           │                    │             │
+       │  2. Request token         │                    │             │
+       │  POST /oauth/token        │                    │             │
+       │  grant_type=              │                    │             │
+       │    urn:aid:agent-identity │                    │             │
+       │  + signed identity        │                    │             │
+       │  + proof of possession    │                    │             │
+       │──────────────────────────>│                    │             │
+       │                           │                    │             │
+       │  3. RS256 JWT token       │                    │             │
+       │<──────────────────────────│                    │             │
+       │                           │                    │             │
+       │  4. Call API with JWT                          │             │
+       │───────────────────────────────────────────────>│             │
+       │                           │                    │             │
+       │                           │  5. Validate JWT   │             │
+       │                           │<───────────────────│             │
+       │                           │  (JWKS endpoint)   │             │
 ```
 
+0. **Admin creates role** — Human admin defines a role with specific permissions on the auth server
 1. **Register** — Agent sends its public key to the auth server (admin-authorized, one-time)
 2. **Authenticate** — Agent presents a signed Agent Identity + proof of possession
 3. **Receive JWT** — Auth server verifies the signature and issues a scoped RS256 JWT
 4. **Use JWT** — Agent calls any API that validates JWTs (standard OAuth 2.0)
+5. **API validates** — Target API verifies the JWT using the auth server's JWKS endpoint
+
+## Sample Flow
+
+A support agent needs API access to the "zoom" tenant:
+
+```bash
+# ── ADMIN (human) ──────────────────────────────────────────
+# 1. Admin creates a "support" role on the auth server with
+#    permissions: tickets:read, tickets:write, users:read
+#    (done via admin dashboard or API)
+
+# ── AGENT (ai) ─────────────────────────────────────────────
+# 2. Agent initializes its Ed25519 identity (one-time)
+aid-init --name support-agent
+
+# 3. Admin registers the agent with the auth server
+#    (requires admin JWT — the agent cannot self-register)
+aid-register \
+  --auth https://auth.23blocks.com/zoom \
+  --token <ADMIN_JWT> \
+  --role-id 3
+
+# 4. Agent requests a scoped token (can do this autonomously)
+TOKEN=$(aid-token --auth https://auth.23blocks.com/zoom --quiet)
+
+# 5. Agent calls APIs with the token
+curl -H "Authorization: Bearer $TOKEN" \
+  https://api.23blocks.com/zoom/tickets
+```
+
+**Security model**: The human admin controls the blast radius. The agent can only get tokens for the role the admin assigned — it cannot register itself, create roles, or escalate permissions.
 
 ## Prerequisites
 
-- [AMP](https://github.com/agentmessaging/claude-plugin) identity initialized (`amp-init --auto`)
-- An OAuth 2.0 auth server that supports the `urn:aid:agent-identity` grant type
 - `jq`, `curl`, `openssl` (OpenSSL 3.x for Ed25519 support)
+- An OAuth 2.0 auth server that supports the `urn:aid:agent-identity` grant type
 
 ## Installation
 
@@ -68,8 +112,8 @@ npx skills add agentmessaging/agent-identity
 ## Quick Start
 
 ```bash
-# 1. Initialize AMP identity (if not already done)
-amp-init --auto
+# 1. Initialize agent identity
+aid-init --auto
 
 # 2. Register with an auth server (one-time, requires admin token)
 aid-register --auth https://auth.example.com/tenant \
@@ -86,6 +130,21 @@ curl -H "Authorization: Bearer $TOKEN" https://api.example.com/resource
 
 ## Commands
 
+### `aid-init` — Initialize Agent Identity
+
+Create an Ed25519 identity for this agent. If [AMP](https://agentmessaging.org) is also installed, both protocols share the same identity directory.
+
+```bash
+aid-init --auto              # Auto-detect name from environment
+aid-init --name my-agent     # Specify agent name
+```
+
+| Flag | Description |
+|------|-------------|
+| `--auto` | Auto-detect agent name |
+| `--name, -n` | Specify agent name |
+| `--force, -f` | Overwrite existing identity |
+
 ### `aid-register` — Register with an Auth Server
 
 One-time registration that links your agent's Ed25519 identity to a tenant with a specific role.
@@ -100,7 +159,7 @@ aid-register --auth <url> --token <admin_jwt> --role-id <id> [options]
 | `--token, -t` | Admin JWT for authorization (required) |
 | `--role-id, -r` | Role ID to assign (required) |
 | `--api-key, -k` | API key (X-Api-Key header) |
-| `--name, -n` | Display name (default: AMP agent name) |
+| `--name, -n` | Display name (default: agent name) |
 | `--description, -d` | Agent description |
 | `--lifetime, -l` | Token lifetime in seconds (default: 3600) |
 
@@ -171,7 +230,7 @@ AID uses a custom OAuth 2.0 grant type: `urn:aid:agent-identity`
 POST /oauth/token
 Content-Type: application/x-www-form-urlencoded
 
-grant_type=urn%3Aamp%3Aagent-identity
+grant_type=urn%3Aaid%3Aagent-identity
 &agent_identity=<base64url-encoded-signed-agent-identity>
 &proof=<base64url-encoded-proof-of-possession>
 &scope=files%3Aread+files%3Awrite
@@ -205,7 +264,7 @@ The proof has a 5-minute validity window to prevent replay attacks.
 | Error | Meaning | Fix |
 |-------|---------|-----|
 | `agent_not_registered` | Agent not registered with this server | Run `aid-register` |
-| `invalid_grant` | Agent Identity signature invalid | Check AMP keys match registration |
+| `invalid_grant` | Agent Identity signature invalid | Check agent keys match registration |
 | `invalid_proof` | Proof of possession failed | Check system clock sync |
 | `invalid_scope` | Requested scopes exceed permissions | Try without `--scope` |
 | `agent_suspended` | Agent has been suspended | Contact admin |
@@ -214,6 +273,7 @@ The proof has a 5-minute validity window to prevent replay attacks.
 
 - **No shared secrets** — authentication uses Ed25519 asymmetric cryptography
 - **No API keys to rotate** — identity is the key pair itself
+- **Human controls access** — admin creates roles and registers agents; agents cannot self-register
 - **Replay protection** — proof of possession has a 5-minute window
 - **Scoped tokens** — JWTs contain only the scopes the agent's role allows
 - **Local key storage** — private keys never leave the agent's machine
@@ -226,15 +286,29 @@ To support AID, your OAuth 2.0 server needs:
 1. **Agent Registration endpoint** — `POST /agent_registrations` accepting public key, address, fingerprint
 2. **Token endpoint** — `POST /oauth/token` supporting `grant_type=urn:aid:agent-identity`
 3. **Ed25519 verification** — validate Agent Identity signatures and proof of possession
-4. **OIDC discovery** — advertise `urn:aid:agent-identity` in `grant_types_supported`
+4. **JWKS endpoint** — `GET /.well-known/jwks.json` so target APIs can validate issued JWTs
+5. **OIDC discovery** — advertise `urn:aid:agent-identity` in `grant_types_supported`
 
-See the [23blocks Authentication API](https://github.com/23blocks/blocks/gateway/api) for a reference implementation.
+**Target APIs** (the services your agents call) only need to validate RS256 JWTs using the auth server's JWKS endpoint — no AID-specific logic required.
+
+See the [23blocks Authentication API](https://github.com/23blocks-org/gateway-api) for a reference implementation.
+
+## Interoperability with AMP
+
+AID and [AMP](https://agentmessaging.org) (Agent Messaging Protocol) are independent protocols from the same organization. If both are installed, they share the `~/.agent-messaging/agents/` directory — one identity serves both protocols. Neither requires the other.
+
+| | AID | AMP |
+|---|---|---|
+| **Purpose** | Authentication & authorization | Messaging between agents |
+| **What it does** | Gets JWT tokens for API access | Sends/receives messages |
+| **Requires the other?** | No | No |
+| **Shared** | Ed25519 identity, key storage | Ed25519 identity, key storage |
 
 ## Related Projects
 
-- [Agent Messaging Protocol (AMP)](https://github.com/agentmessaging/protocol) — the identity and messaging layer AID builds on
+- [Agent Messaging Protocol (AMP)](https://github.com/agentmessaging/protocol) — messaging between AI agents
 - [AMP Claude Plugin](https://github.com/agentmessaging/claude-plugin) — AMP integration for Claude Code
-- [23blocks Authentication API](https://github.com/23blocks/blocks/gateway/api) — reference auth server with AID support
+- [23blocks Authentication API](https://github.com/23blocks-org/gateway-api) — reference auth server with AID support
 
 ## License
 

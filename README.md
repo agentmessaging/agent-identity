@@ -259,6 +259,65 @@ proof = base64url(ed25519_sign(sign_input) + timestamp_string)
 
 The proof has a 5-minute validity window to prevent replay attacks.
 
+## Token Introspection (RFC 7662)
+
+Target APIs can verify agent tokens in real-time using the introspection endpoint. This is especially useful for checking if an agent has been suspended since the token was issued.
+
+**Request:**
+```
+POST /:tenant/oauth/introspect
+Content-Type: application/x-www-form-urlencoded
+
+token=eyJhbGciOiJSUz...
+```
+
+**Response (active agent):**
+```json
+{
+  "active": true,
+  "sub": "agent:abc123",
+  "scope": "tickets:read tickets:write",
+  "token_type": "Bearer",
+  "agent_id": "abc123-uuid",
+  "agent_address": "support-bot@tenant.local",
+  "agent_name": "support-bot",
+  "agent_role": "support",
+  "agent_status": "active",
+  "exp": 1711411200,
+  "iat": 1711407600
+}
+```
+
+**Response (suspended agent):**
+```json
+{
+  "active": false,
+  "reason": "agent_suspended"
+}
+```
+
+Target APIs can choose between:
+- **Offline validation** — verify the JWT signature via JWKS (fast, but can't detect suspension until token expires)
+- **Online introspection** — call the introspection endpoint (slower, but real-time status)
+
+## Agent Lifecycle
+
+```
+pending ──> active ──> suspended ──> active   (reactivated by admin)
+                   └──> deleted                (soft delete, terminal)
+```
+
+| Status | Can get tokens? | Introspection returns |
+|--------|----------------|----------------------|
+| `pending` | No | `active: false` |
+| `active` | Yes | `active: true` |
+| `suspended` | No (403) | `active: false, reason: agent_suspended` |
+| `deleted` | No | `active: false, reason: agent_not_found` |
+
+Admins control agent lifecycle via the registration API:
+- `POST /agent_registrations/:id/suspend` — immediately block token issuance and invalidate via introspection
+- `POST /agent_registrations/:id/reactivate` — restore agent access
+
 ## Error Handling
 
 | Error | Meaning | Fix |
@@ -267,7 +326,7 @@ The proof has a 5-minute validity window to prevent replay attacks.
 | `invalid_grant` | Agent Identity signature invalid | Check agent keys match registration |
 | `invalid_proof` | Proof of possession failed | Check system clock sync |
 | `invalid_scope` | Requested scopes exceed permissions | Try without `--scope` |
-| `agent_suspended` | Agent has been suspended | Contact admin |
+| `agent_suspended` | Agent has been suspended by admin | Contact admin for reactivation |
 
 ## Security
 
@@ -283,13 +342,17 @@ The proof has a 5-minute validity window to prevent replay attacks.
 
 To support AID, your OAuth 2.0 server needs:
 
-1. **Agent Registration endpoint** — `POST /agent_registrations` accepting public key, address, fingerprint
+1. **Agent Registration endpoint** — `POST /agent_registrations` accepting public key, address, fingerprint, role binding
 2. **Token endpoint** — `POST /oauth/token` supporting `grant_type=urn:aid:agent-identity`
 3. **Ed25519 verification** — validate Agent Identity signatures and proof of possession
 4. **JWKS endpoint** — `GET /.well-known/jwks.json` so target APIs can validate issued JWTs
 5. **OIDC discovery** — advertise `urn:aid:agent-identity` in `grant_types_supported`
+6. **Introspection endpoint** — `POST /oauth/introspect` (RFC 7662) for real-time token validation
+7. **Lifecycle management** — suspend/reactivate endpoints for admin control
 
-**Target APIs** (the services your agents call) only need to validate RS256 JWTs using the auth server's JWKS endpoint — no AID-specific logic required.
+**Target APIs** (the services your agents call) can:
+- **Minimal**: Validate RS256 JWTs using the auth server's JWKS endpoint (no AID-specific code)
+- **Full**: Also call the introspection endpoint for real-time suspension checking
 
 See the [23blocks Authentication API](https://github.com/23blocks-org/gateway-api) for a reference implementation.
 

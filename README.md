@@ -259,6 +259,26 @@ proof = base64url(ed25519_sign(sign_input) + timestamp_string)
 
 The proof has a 5-minute validity window to prevent replay attacks.
 
+### Scope Resolution
+
+When the `scope` parameter is included in the token request, the auth server MUST apply scope intersection:
+
+1. Let `registered_scopes` = the set of scopes available to the agent via its assigned role
+2. Let `requested_scopes` = the scopes in the `scope` parameter (space-separated)
+3. If `requested_scopes` is empty or omitted, grant all `registered_scopes`
+4. If any scope in `requested_scopes` is NOT in `registered_scopes`, the server MUST reject the request with `invalid_scope`
+5. Otherwise, grant exactly `requested_scopes` (which is a subset of `registered_scopes`)
+
+This prevents scope escalation — an agent cannot request permissions beyond what its role allows. It also enables least-privilege token requests, where an agent requests only the scopes it needs for a specific task.
+
+**Error response for invalid scopes:**
+```json
+{
+  "error": "invalid_scope",
+  "error_description": "Requested scopes not permitted: admin:write, users:delete"
+}
+```
+
 ## Token Introspection (RFC 7662)
 
 Target APIs can verify agent tokens in real-time using the introspection endpoint. This is especially useful for checking if an agent has been suspended since the token was issued.
@@ -288,6 +308,28 @@ token=eyJhbGciOiJSUz...
 }
 ```
 
+### Required Introspection Fields
+
+When introspecting an agent token, the auth server MUST include these agent-specific fields alongside the standard RFC 7662 fields:
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `active` | boolean | MUST | Whether the token is valid AND the agent is active |
+| `sub` | string | MUST | Agent's subject identifier |
+| `scope` | string | MUST | Space-separated granted scopes |
+| `token_type` | string | MUST | Always `"Bearer"` |
+| `agent_id` | string | MUST | Agent's unique identifier (from registration) |
+| `agent_address` | string | MUST | Agent's address (e.g., `name@org.provider`) |
+| `agent_name` | string | MUST | Agent's human-readable display name |
+| `agent_role` | string | MUST | Name of the role assigned to this agent |
+| `agent_status` | string | MUST | Current lifecycle status: `pending`, `active`, `suspended`, or `deleted` |
+| `exp` | integer | MUST | Token expiration (Unix timestamp) |
+| `iat` | integer | MUST | Token issued-at (Unix timestamp) |
+| `iss` | string | SHOULD | Issuer URL |
+| `jti` | string | SHOULD | Unique token identifier |
+
+These fields allow target APIs to make authorization decisions based on agent identity, not just token validity. For example, an API can log which agent made each request, or apply per-agent rate limits.
+
 **Response (suspended agent):**
 ```json
 {
@@ -295,6 +337,8 @@ token=eyJhbGciOiJSUz...
   "reason": "agent_suspended"
 }
 ```
+
+When `active` is `false`, the `reason` field SHOULD indicate why: `agent_suspended`, `agent_not_found`, `token_expired`, or `invalid_token`.
 
 Target APIs can choose between:
 - **Offline validation** — verify the JWT signature via JWKS (fast, but can't detect suspension until token expires)

@@ -51,36 +51,109 @@ AID lets AI agents authenticate with OAuth 2.0 servers using their Ed25519 crypt
 4. **Use JWT** — Agent calls any API that validates JWTs (standard OAuth 2.0)
 5. **API validates** — Target API verifies the JWT using the auth server's JWKS endpoint
 
-## Sample Flow
+## Registration
 
-A support agent needs API access to the "zoom" tenant:
+AID supports two registration flows. Both require human approval — agents can never grant themselves permissions.
+
+### Admin-Initiated Registration
+
+The admin has the agent's public key and registers it directly:
 
 ```bash
-# ── ADMIN (human) ──────────────────────────────────────────
-# 1. Admin creates a "support" role on the auth server with
-#    permissions: tickets:read, tickets:write, users:read
-#    (done via admin dashboard or API)
-
-# ── AGENT (ai) ─────────────────────────────────────────────
-# 2. Agent initializes its Ed25519 identity (one-time)
+# ── AGENT ─────────────────────────────────────────────────
 aid-init --name support-agent
 
-# 3. Admin registers the agent with the auth server
-#    (requires admin JWT — the agent cannot self-register)
+# ── ADMIN ─────────────────────────────────────────────────
+# Admin registers the agent (requires admin JWT + role assignment)
 aid-register \
   --auth https://auth.23blocks.com/zoom \
   --token <ADMIN_JWT> \
   --role-id 3
 
-# 4. Agent requests a scoped token (can do this autonomously)
+# ── AGENT ─────────────────────────────────────────────────
+# Agent can now get tokens immediately
 TOKEN=$(aid-token --auth https://auth.23blocks.com/zoom --quiet)
+```
 
-# 5. Agent calls APIs with the token
+The `--role-id` binds the agent to a specific role, and the `--token <ADMIN_JWT>` authorizes it. Once registered, every token the agent requests is scoped to that role's permissions — the agent cannot change its role or escalate permissions.
+
+### Agent-Initiated Registration
+
+The agent requests access on its own. An admin approves it later.
+
+```
+┌──────────────┐                    ┌──────────────────┐
+│   AI Agent    │                    │   Auth Server    │
+│  (Ed25519)    │                    │  (OAuth 2.0)     │
+└──────┬────────┘                    └────────┬─────────┘
+       │                                      │
+       │  1. POST /agent_registrations/request│
+       │  {public_key, address, fingerprint}  │
+       │─────────────────────────────────────>│
+       │                                      │
+       │  2. 202 Accepted (status: pending)   │
+       │<─────────────────────────────────────│
+       │                                      │
+       │         ┌──────────────┐             │
+       │         │  Human Admin  │             │
+       │         └──────┬────────┘             │
+       │                │                      │
+       │                │  3. Review + approve │
+       │                │  POST /agent_registrations/:id/approve
+       │                │  {role_id: 3}        │
+       │                │─────────────────────>│
+       │                                      │
+       │  4. Poll status                      │
+       │  POST /agent_registrations/:id/status│
+       │─────────────────────────────────────>│
+       │                                      │
+       │  5. 200 OK (status: active)          │
+       │<─────────────────────────────────────│
+       │                                      │
+       │  6. POST /oauth/token                │
+       │  grant_type=urn:aid:agent-identity   │
+       │─────────────────────────────────────>│
+```
+
+```bash
+# ── AGENT ─────────────────────────────────────────────────
+# 1. Initialize identity
+aid-init --name support-agent
+
+# 2. Request registration (no admin token needed)
+aid-request --auth https://auth.23blocks.com/zoom \
+  --description "Handles customer support ticket triage"
+
+# ── ADMIN ─────────────────────────────────────────────────
+# 3. Admin reviews and approves (via dashboard or API)
+#    POST /agent_registrations/:id/approve { role_id: 3 }
+
+# ── AGENT ─────────────────────────────────────────────────
+# 4. Check if approved
+aid-request --auth https://auth.23blocks.com/zoom --poll
+
+# 5. Once approved, get tokens
+TOKEN=$(aid-token --auth https://auth.23blocks.com/zoom --quiet)
+```
+
+**Security**: The agent-initiated flow does NOT bypass human approval. The agent submits its public key and a description of why it needs access. The registration is created in `pending` status — the agent cannot get tokens until an admin approves the request and assigns a role. The admin controls which role (and therefore which scopes) the agent receives. The agent never chooses its own permissions.
+
+## Sample Flow
+
+A support agent needs API access to the "zoom" tenant:
+
+```bash
+# Agent-initiated (agent requests, admin approves)
+aid-init --name support-agent
+aid-request --auth https://auth.23blocks.com/zoom \
+  --description "Tier-1 support ticket triage"
+
+# ... admin approves via dashboard ...
+
+TOKEN=$(aid-token --auth https://auth.23blocks.com/zoom --quiet)
 curl -H "Authorization: Bearer $TOKEN" \
   https://api.23blocks.com/zoom/tickets
 ```
-
-**How the agent gets its permissions**: The `--role-id` in `aid-register` binds the agent to a specific role, and the `--token <ADMIN_JWT>` is what authorizes it. The admin's JWT proves they have permission to register agents with that role. Without a valid admin token, the registration is rejected. Once registered, every token the agent requests is scoped to that role's permissions — the agent cannot change its role, self-register, or escalate permissions. One-time human approval, then the agent operates autonomously within those boundaries.
 
 ## Prerequisites
 
@@ -115,7 +188,12 @@ npx skills add agentmessaging/agent-identity
 # 1. Initialize agent identity
 aid-init --auto
 
-# 2. Register with an auth server (one-time, requires admin token)
+# 2a. Request registration (agent-initiated, no admin token needed)
+aid-request --auth https://auth.example.com/tenant
+# ... wait for admin approval ...
+aid-request --auth https://auth.example.com/tenant --poll
+
+# 2b. Or: admin-initiated registration (requires admin token)
 aid-register --auth https://auth.example.com/tenant \
   --token eyJ... \
   --role-id 2
@@ -171,6 +249,39 @@ aid-register \
   --role-id 2 \
   --description "Handles file processing"
 ```
+
+### `aid-request` — Request Registration (Agent-Initiated)
+
+Submit a registration request without an admin token. The request is created in `pending` status and must be approved by an admin before the agent can get tokens.
+
+```bash
+aid-request --auth <url> [options]
+```
+
+| Flag | Description |
+|------|-------------|
+| `--auth, -a` | Auth server URL (required) |
+| `--api-key, -k` | API key (X-Api-Key header) |
+| `--name, -n` | Display name (default: agent name) |
+| `--description, -d` | Why this agent needs access |
+| `--poll, -p` | Check status of a pending request |
+
+**Examples:**
+```bash
+# Request registration
+aid-request --auth https://auth.23blocks.com/acme \
+  --description "Handles customer support ticket triage"
+
+# Check if request has been approved
+aid-request --auth https://auth.23blocks.com/acme --poll
+```
+
+**What it does:**
+1. Reads the agent's Ed25519 public key and identity
+2. POSTs to `POST /agent_registrations/request` (no auth token required)
+3. Server creates a `pending` registration
+4. Stores the registration ID locally for polling
+5. With `--poll`, checks the current status of the pending request
 
 ### `aid-token` — Request a JWT Token
 
@@ -303,18 +414,24 @@ Target APIs can choose between:
 ## Agent Lifecycle
 
 ```
-pending ──> active ──> suspended ──> active   (reactivated by admin)
-                   └──> deleted                (soft delete, terminal)
+                            ┌───────────────────────────────────────┐
+                            │                                       v
+aid-request ──> pending ──> active ──> suspended ──> active   (reactivated)
+                   │                           └──> deleted   (terminal)
+                   └──> rejected                              (terminal)
 ```
 
 | Status | Can get tokens? | Introspection returns |
 |--------|----------------|----------------------|
-| `pending` | No | `active: false` |
+| `pending` | No | `active: false, reason: registration_pending` |
 | `active` | Yes | `active: true` |
 | `suspended` | No (403) | `active: false, reason: agent_suspended` |
+| `rejected` | No | `active: false, reason: agent_not_found` |
 | `deleted` | No | `active: false, reason: agent_not_found` |
 
 Admins control agent lifecycle via the registration API:
+- `POST /agent_registrations/:id/approve` — approve a pending request and assign a role
+- `POST /agent_registrations/:id/reject` — reject a pending request
 - `POST /agent_registrations/:id/suspend` — immediately block token issuance and invalidate via introspection
 - `POST /agent_registrations/:id/reactivate` — restore agent access
 
@@ -322,7 +439,8 @@ Admins control agent lifecycle via the registration API:
 
 | Error | Meaning | Fix |
 |-------|---------|-----|
-| `agent_not_registered` | Agent not registered with this server | Run `aid-register` |
+| `agent_not_registered` | Agent not registered with this server | Run `aid-request` or `aid-register` |
+| `registration_pending` | Registration awaiting admin approval | Run `aid-request --poll` to check status |
 | `invalid_grant` | Agent Identity signature invalid | Check agent keys match registration |
 | `invalid_proof` | Proof of possession failed | Check system clock sync |
 | `invalid_scope` | Requested scopes exceed permissions | Try without `--scope` |
@@ -332,7 +450,7 @@ Admins control agent lifecycle via the registration API:
 
 - **No shared secrets** — authentication uses Ed25519 asymmetric cryptography
 - **No API keys to rotate** — identity is the key pair itself
-- **Human controls access** — admin creates roles and registers agents; agents cannot self-register
+- **Human controls access** — agents can request registration, but only an admin can approve and assign roles
 - **Replay protection** — proof of possession has a 5-minute window
 - **Scoped tokens** — JWTs contain only the scopes the agent's role allows
 - **Local key storage** — private keys never leave the agent's machine
@@ -342,7 +460,8 @@ Admins control agent lifecycle via the registration API:
 
 To support AID, your OAuth 2.0 server needs:
 
-1. **Agent Registration endpoint** — `POST /agent_registrations` accepting public key, address, fingerprint, role binding
+1. **Agent Registration endpoint** — `POST /agent_registrations` (admin-initiated) and `POST /agent_registrations/request` (agent-initiated, creates `pending` registration)
+1. **Registration approval** — `POST /agent_registrations/:id/approve` with role assignment, `POST /agent_registrations/:id/reject`
 2. **Token endpoint** — `POST /oauth/token` supporting `grant_type=urn:aid:agent-identity`
 3. **Ed25519 verification** — validate Agent Identity signatures and proof of possession
 4. **JWKS endpoint** — `GET /.well-known/jwks.json` so target APIs can validate issued JWTs

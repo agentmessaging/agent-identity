@@ -18,6 +18,15 @@ INSTALL_DIR="${1:-$HOME/.local/bin}"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SCRIPTS_SRC="${SCRIPT_DIR}/scripts"
 
+# Remote install: when piped via curl, scripts/ won't exist locally.
+# Download them from GitHub into a temp directory.
+REMOTE_BASE="https://raw.githubusercontent.com/agentmessaging/agent-identity/main/scripts"
+TEMP_DIR=""
+if [ ! -d "$SCRIPTS_SRC" ]; then
+    TEMP_DIR=$(mktemp -d)
+    SCRIPTS_SRC="$TEMP_DIR"
+fi
+
 # Colors
 GREEN='\033[0;32m'
 YELLOW='\033[1;33m'
@@ -87,6 +96,11 @@ SCRIPTS=(
 )
 
 for script in "${SCRIPTS[@]}"; do
+    # Download from GitHub if not available locally (remote install via curl | bash)
+    if [ ! -f "${SCRIPTS_SRC}/${script}" ] && [ -n "$TEMP_DIR" ]; then
+        curl -fsSL "${REMOTE_BASE}/${script}" -o "${SCRIPTS_SRC}/${script}" 2>/dev/null || true
+    fi
+
     if [ -f "${SCRIPTS_SRC}/${script}" ]; then
         cp "${SCRIPTS_SRC}/${script}" "${INSTALL_DIR}/${script}"
         chmod +x "${INSTALL_DIR}/${script}"
@@ -95,6 +109,11 @@ for script in "${SCRIPTS[@]}"; do
         echo -e "  ${RED}Missing${NC} ${script}"
     fi
 done
+
+# Cleanup temp directory
+if [ -n "$TEMP_DIR" ] && [ -d "$TEMP_DIR" ]; then
+    rm -rf "$TEMP_DIR"
+fi
 
 echo ""
 

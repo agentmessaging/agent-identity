@@ -17,7 +17,9 @@ Authenticate AI agents with auth servers using cryptographic identity documents 
 
 Use this skill when the user or task requires:
 - Initializing an agent's Ed25519 identity
-- Registering an agent's identity with an auth server
+- Requesting registration with an auth server (agent-initiated)
+- Registering an agent's identity with an auth server (admin-initiated)
+- Checking the status of a pending registration request
 - Obtaining JWT tokens for API access via token exchange
 - Checking an agent's AID registration status
 - Setting up agent-to-server authentication
@@ -29,7 +31,12 @@ Use this skill when the user or task requires:
 # 1. Initialize agent identity (one-time)
 aid-init.sh --auto
 
-# 2. Register with an auth server (one-time, requires admin token)
+# 2a. Request registration (agent-initiated, no admin token needed)
+aid-request.sh --auth https://auth.23blocks.com/acme
+# ... wait for admin approval ...
+aid-request.sh --auth https://auth.23blocks.com/acme --poll
+
+# 2b. Or: admin-initiated registration (requires admin token)
 aid-register.sh --auth https://auth.23blocks.com/acme \
   --token <ADMIN_JWT> --role-id 2
 
@@ -78,9 +85,32 @@ aid-init.sh --name my-agent --force  # Overwrite existing
 - `--name, -n` — Specify agent name
 - `--force, -f` — Overwrite existing identity
 
-### aid-register.sh — Register with Auth Server
+### aid-request.sh — Request Registration (Agent-Initiated)
 
-One-time registration linking the agent's Ed25519 identity to a tenant with a specific role.
+Request registration without an admin token. Creates a `pending` registration that an admin must approve.
+
+```bash
+aid-request.sh --auth https://auth.23blocks.com/acme
+aid-request.sh --auth https://auth.23blocks.com/acme --poll
+```
+
+**Parameters:**
+- `--auth, -a` — Auth server URL (required)
+- `--api-key, -k` — API key (X-Api-Key header)
+- `--name, -n` — Display name (default: agent name)
+- `--description, -d` — Why this agent needs access
+- `--poll, -p` — Check status of a pending request
+
+**What it does:**
+1. Reads the agent's Ed25519 public key and identity
+2. POSTs to `/agent_registrations/request` (no auth token required)
+3. Server creates a `pending` registration
+4. Stores the registration ID locally for polling
+5. With `--poll`, checks whether the admin has approved the request
+
+### aid-register.sh — Register with Auth Server (Admin-Initiated)
+
+One-time registration linking the agent's Ed25519 identity to a tenant with a specific role. Requires an admin JWT.
 
 ```bash
 aid-register.sh --auth https://auth.23blocks.com/acme \
@@ -185,7 +215,9 @@ The server returns a standard OAuth 2.0 response with an RS256 JWT access token.
 Agents should map these user intents to the appropriate commands:
 
 - "Initialize my identity" -> `aid-init.sh --auto`
+- "Request access to the API" -> `aid-request.sh --auth <url>`
 - "Register with the API" -> `aid-register.sh --auth <url> --token <jwt> --role-id <id>`
+- "Check if I'm approved" -> `aid-request.sh --auth <url> --poll`
 - "Get me an API token" -> `aid-token.sh --auth <url>`
 - "Check my registrations" -> `aid-status.sh`
 - "Authenticate with the auth server" -> `aid-token.sh --auth <url>`
@@ -235,7 +267,8 @@ Returns `active: true/false` with agent details. Useful for detecting suspended 
 | Problem | Solution |
 |---------|----------|
 | "Agent identity not initialized" | Run `aid-init.sh --auto` |
-| "Not registered" | Run `aid-register.sh` with auth server details |
+| "Not registered" | Run `aid-request.sh` or `aid-register.sh` with auth server details |
+| "Registration pending" | Run `aid-request.sh --poll` to check approval status |
 | "Proof expired" | Clock skew >5 minutes; sync system clock |
 | "Invalid signature" | Agent identity may be corrupted; re-init and re-register |
 | "Fingerprint mismatch" | Agent key changed since registration; re-register |

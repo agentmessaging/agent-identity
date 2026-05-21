@@ -151,10 +151,16 @@ When an agent-initiated registration is created, the auth server MUST return an 
 **Standard path**: Auth server implementers SHOULD serve the agent authorization UI at a well-known path:
 
 ```
-/agents/authorize?code={unique_id}
+/agents/authorize?code={authorization_code}
 ```
 
 This allows agents to predict the authorization URL from just the domain, without needing per-provider configuration.
+
+**Authorization code**: The `code` parameter MUST be a temporary, opaque token — NOT the agent's `unique_id` or any other permanent identifier. This prevents leaking system information when the URL is shared via email, Slack, or logs. The code SHOULD:
+- Be cryptographically random (e.g., 32 bytes, URL-safe base64)
+- Expire after a reasonable period (RECOMMENDED: 24 hours)
+- Be single-use or regenerated on each request
+- Resolve to the agent registration only via a server-side lookup
 
 **Response example:**
 ```json
@@ -164,11 +170,19 @@ This allows agents to predict the authorization URL from just the domain, withou
     "id": "4e6aa83e-e4d4-4b31-b519-1b493855c28d",
     "attributes": {
       "status": "pending",
-      "authorization_url": "https://acme.example.com/agents/authorize?code=4e6aa83e-e4d4-4b31-b519-1b493855c28d"
+      "authorization_url": "https://acme.example.com/agents/authorize?code=kX9mP2vL7qR4wY6tN8sA..."
     }
   }
 }
 ```
+
+**Resolving the code**: The auth server MUST provide an endpoint to resolve the authorization code into the full agent registration:
+
+```
+GET /agent_registrations/resolve?code={authorization_code}
+```
+
+This endpoint requires admin authentication (`agent_registrations:read` scope) and returns the agent registration details if the code is valid and not expired. Returns 404 if the code is invalid or expired.
 
 **How the URL is resolved:**
 
@@ -176,14 +190,15 @@ The auth server builds the URL from the tenant's configured frontend domain. In 
 
 | Scenario | Authorization URL |
 |----------|------------------|
-| Tenant has custom domain | `https://acme.example.com/agents/authorize?code={id}` |
-| Tenant uses platform default | `https://platform.example.com/agents/authorize?code={id}` |
+| Tenant has custom domain | `https://acme.example.com/agents/authorize?code={code}` |
+| Tenant uses platform default | `https://platform.example.com/agents/authorize?code={code}` |
 
 The authorization page MUST:
-1. Display the agent's name, address, and fingerprint for admin verification
-2. Allow the admin to select a role for the agent
-3. Call `POST /agent_registrations/:id/approve` with the selected `role_id`
-4. Require the admin to be authenticated with `agent_registrations:write` scope
+1. Call the resolve endpoint to look up the agent by authorization code
+2. Display the agent's name, address, and fingerprint for admin verification
+3. Allow the admin to select a role for the agent
+4. Call `POST /agent_registrations/:id/approve` with the selected `role_id`
+5. Require the admin to be authenticated with `agent_registrations:write` scope
 
 **Security**: The agent-initiated flow does NOT bypass human approval. The agent submits its public key and a description of why it needs access. The registration is created in `pending` status — the agent cannot get tokens until an admin approves the request and assigns a role. The admin controls which role (and therefore which scopes) the agent receives. The agent never chooses its own permissions.
 
@@ -556,7 +571,7 @@ To support AID, your OAuth 2.0 server needs:
 
 1. **Agent Registration endpoint** — `POST /agent_registrations` (admin-initiated) and `POST /agent_registrations/request` (agent-initiated, creates `pending` registration)
 1. **Registration approval** — `POST /agent_registrations/:id/approve` with role assignment, `POST /agent_registrations/:id/reject`
-1. **Authorization URL** — return `authorization_url` in agent-initiated registration responses, pointing to your admin UI at `/agents/authorize?code={id}`
+1. **Authorization URL** — return `authorization_url` with a temporary opaque code in agent-initiated registration responses, and a `GET /agent_registrations/resolve?code={code}` endpoint for the admin UI to resolve it
 2. **Token endpoint** — `POST /oauth/token` supporting `grant_type=urn:aid:agent-identity`
 3. **Ed25519 verification** — validate Agent Identity signatures and proof of possession
 4. **JWKS endpoint** — `GET /.well-known/jwks.json` so target APIs can validate issued JWTs

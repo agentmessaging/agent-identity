@@ -105,12 +105,12 @@ The agent requests access on its own. An admin approves it later.
        │                │                      │
        │                │  3. Visit URL +      │
        │                │     approve          │
-       │                │  POST /agent_registrations/:id/approve
+       │                │  POST /agent_registrations/:unique_id/approve
        │                │  {role_id: 3}        │
        │                │─────────────────────>│
        │                                      │
        │  4. Poll status                      │
-       │  POST /agent_registrations/:id/status│
+       │  POST /agent_registrations/:unique_id/status│
        │─────────────────────────────────────>│
        │                                      │
        │  5. 200 OK (status: active)          │
@@ -130,11 +130,11 @@ aid-init --name support-agent
 aid-request --auth https://auth.23blocks.com/zoom \
   --description "Handles customer support ticket triage"
 # → Returns authorization_url for admin approval
-# → e.g. https://app.23blocks.com/agents/authorize?code=4e6aa83e-...
+# → e.g. https://app.23blocks.com/agents/authorize?code=kX9mP2vL7qR4wY6t...
 
 # ── ADMIN ─────────────────────────────────────────────────
 # 3. Admin visits the authorization_url, reviews the agent, and approves
-#    (or via API: POST /agent_registrations/:id/approve { role_id: 3 })
+#    (or via API: POST /agent_registrations/:unique_id/approve { role_id: 3 })
 
 # ── AGENT ─────────────────────────────────────────────────
 # 4. Check if approved
@@ -211,7 +211,7 @@ The authorization page MUST:
 1. Call the resolve endpoint to look up the agent by authorization code
 2. Display the agent's name, address, and fingerprint for admin verification
 3. Allow the admin to select a role for the agent
-4. Call `POST /agent_registrations/:id/approve` with the selected `role_id`
+4. Call `POST /agent_registrations/:unique_id/approve` with the selected `role_id`
 5. Require the admin to be authenticated with `agent_registrations:write` scope
 
 **Security**: The agent-initiated flow does NOT bypass human approval. The agent submits its public key and a description of why it needs access. The registration is created in `pending` status — the agent cannot get tokens until an admin approves the request and assigns a role. The admin controls which role (and therefore which scopes) the agent receives. The agent never chooses its own permissions.
@@ -553,10 +553,10 @@ aid-request ──> pending ──> active ──> suspended ──> active   (r
 | `deleted` | No | `active: false, reason: agent_not_found` |
 
 Admins control agent lifecycle via the registration API:
-- `POST /agent_registrations/:id/approve` — approve a pending request and assign a role
-- `POST /agent_registrations/:id/reject` — reject a pending request
-- `POST /agent_registrations/:id/suspend` — immediately block token issuance and invalidate via introspection
-- `POST /agent_registrations/:id/reactivate` — restore agent access
+- `POST /agent_registrations/:unique_id/approve` — approve a pending request and assign a role
+- `POST /agent_registrations/:unique_id/reject` — reject a pending request
+- `POST /agent_registrations/:unique_id/suspend` — immediately block token issuance and invalidate via introspection
+- `POST /agent_registrations/:unique_id/reactivate` — restore agent access
 
 ## Error Handling
 
@@ -603,7 +603,7 @@ When an agent polls for registration status, the auth server MUST return one of 
 To support AID, your OAuth 2.0 server needs:
 
 1. **Agent Registration endpoint** — `POST /agent_registrations` (admin-initiated) and `POST /agent_registrations/request` (agent-initiated, creates `pending` registration)
-1. **Registration approval** — `POST /agent_registrations/:id/approve` with role assignment, `POST /agent_registrations/:id/reject`
+1. **Registration approval** — `POST /agent_registrations/:unique_id/approve` with role assignment, `POST /agent_registrations/:unique_id/reject`
 1. **Authorization URL** — return `authorization_url` with a temporary opaque code in agent-initiated registration responses, and a `GET /agent_registrations/resolve?code={code}` endpoint for the admin UI to resolve it
 2. **Token endpoint** — `POST /oauth/token` supporting `grant_type=urn:aid:agent-identity`
 3. **Ed25519 verification** — validate Agent Identity signatures and proof of possession

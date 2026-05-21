@@ -29,6 +29,7 @@ source "${SCRIPT_DIR}/aid-helper.sh"
 # =============================================================================
 
 AUTH_URL=""
+API_KEY=""
 SCOPE=""
 OUTPUT_FORMAT="text"
 NO_CACHE=false
@@ -43,6 +44,7 @@ show_help() {
     echo "  --auth, -a URL          Auth server URL (e.g., https://auth.23blocks.com/acme)"
     echo ""
     echo "Options:"
+    echo "  --api-key, -k KEY       API key (X-Api-Key header)"
     echo "  --scope, -s SCOPES      Space-separated scopes (default: all registered scopes)"
     echo "  --json, -j              Output as JSON"
     echo "  --no-cache              Skip token cache, always request new token"
@@ -65,6 +67,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --auth|-a)
             AUTH_URL="$2"
+            shift 2
+            ;;
+        --api-key|-k)
+            API_KEY="$2"
             shift 2
             ;;
         --scope|-s)
@@ -295,6 +301,7 @@ fi
 HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" \
     -X POST "$TOKEN_URL" \
     -H "Content-Type: application/x-www-form-urlencoded" \
+    ${API_KEY:+-H "X-Api-Key: ${API_KEY}"} \
     -d "$FORM_DATA" \
     --connect-timeout 10 \
     --max-time 30 \

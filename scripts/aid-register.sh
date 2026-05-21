@@ -222,7 +222,7 @@ if [ "$HTTP_STATUS" = "201" ]; then
     AID_REG_DIR="${AMP_DIR}/api_registrations"
     mkdir -p "$AID_REG_DIR"
 
-    AUTH_HOST=$(echo "$AUTH_URL" | sed 's|https\?://||' | cut -d/ -f1)
+    AUTH_HOST=$(echo "$AUTH_URL" | sed -E 's|https?://||' | cut -d/ -f1)
     REG_FILE="${AID_REG_DIR}/${AUTH_HOST}.json"
 
     jq -n \

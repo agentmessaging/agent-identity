@@ -132,7 +132,7 @@ DISPLAY_NAME="${AGENT_DISPLAY_NAME:-$AMP_AGENT_NAME}"
 
 AID_REG_DIR="${AMP_DIR}/api_registrations"
 mkdir -p "$AID_REG_DIR"
-AUTH_HOST=$(echo "$AUTH_URL" | sed 's|https\?://||' | cut -d/ -f1)
+AUTH_HOST=$(echo "$AUTH_URL" | sed -E 's|https?://||' | cut -d/ -f1)
 REG_FILE="${AID_REG_DIR}/${AUTH_HOST}.json"
 
 # =============================================================================

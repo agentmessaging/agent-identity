@@ -324,6 +324,7 @@ if [ "$HTTP_STATUS" = "201" ] || [ "$HTTP_STATUS" = "202" ]; then
     UNIQUE_ID=$(echo "$HTTP_BODY" | jq -r '.data.id // .data.attributes.unique_id // "?"')
     REG_NAME=$(echo "$HTTP_BODY" | jq -r '.data.attributes.name // "?"')
     REG_STATUS=$(echo "$HTTP_BODY" | jq -r '.data.attributes.status // "pending"')
+    AUTH_APPROVE_URL=$(echo "$HTTP_BODY" | jq -r '.data.attributes.authorization_url // empty' 2>/dev/null)
 
     # Save registration info locally
     jq -n \
@@ -331,12 +332,14 @@ if [ "$HTTP_STATUS" = "201" ] || [ "$HTTP_STATUS" = "202" ]; then
         --arg unique_id "$UNIQUE_ID" \
         --arg name "$REG_NAME" \
         --arg status "$REG_STATUS" \
+        --arg authorization_url "${AUTH_APPROVE_URL:-}" \
         --arg requested_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         '{
             auth_server: $auth_server,
             agent_unique_id: $unique_id,
             name: $name,
             status: $status,
+            authorization_url: $authorization_url,
             requested_at: $requested_at
         }' > "$REG_FILE"
     chmod 600 "$REG_FILE"
@@ -347,10 +350,18 @@ if [ "$HTTP_STATUS" = "201" ] || [ "$HTTP_STATUS" = "202" ]; then
     echo "  Name:       ${REG_NAME}"
     echo "  Status:     ${REG_STATUS}"
     echo "  Auth:       ${AUTH_URL}"
+    if [ -n "$AUTH_APPROVE_URL" ]; then
+        echo ""
+        echo "  Authorization URL (share with your admin):"
+        echo "    ${AUTH_APPROVE_URL}"
+    fi
     echo ""
     echo "  Saved to: ${REG_FILE}"
     echo ""
     echo "  An admin must approve your request before you can get tokens."
+    if [ -n "$AUTH_APPROVE_URL" ]; then
+        echo "  Share the authorization URL above with your admin."
+    fi
     echo "  Check status with:"
     echo "    aid-request --auth ${AUTH_URL} --poll"
 

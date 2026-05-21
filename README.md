@@ -91,20 +91,26 @@ The agent requests access on its own. An admin approves it later.
        │  {public_key, address, fingerprint}  │
        │─────────────────────────────────────>│
        │                                      │
-       │  2. 202 Accepted (status: pending)   │
+       │  2. 202 Accepted                      │
+       │  {status: pending,                   │
+       │   authorization_url: https://...}    │
        │<─────────────────────────────────────│
+       │                                      │
+       │  2b. Agent shows authorization_url   │
+       │      to human admin                  │
        │                                      │
        │         ┌──────────────┐             │
        │         │  Human Admin  │             │
        │         └──────┬────────┘             │
        │                │                      │
-       │                │  3. Review + approve │
-       │                │  POST /agent_registrations/:id/approve
+       │                │  3. Visit URL +      │
+       │                │     approve          │
+       │                │  POST /agent_registrations/:unique_id/approve
        │                │  {role_id: 3}        │
        │                │─────────────────────>│
        │                                      │
        │  4. Poll status                      │
-       │  POST /agent_registrations/:id/status│
+       │  POST /agent_registrations/:unique_id/status│
        │─────────────────────────────────────>│
        │                                      │
        │  5. 200 OK (status: active)          │
@@ -123,10 +129,12 @@ aid-init --name support-agent
 # 2. Request registration (no admin token needed)
 aid-request --auth https://auth.23blocks.com/zoom \
   --description "Handles customer support ticket triage"
+# → Returns authorization_url for admin approval
+# → e.g. https://app.23blocks.com/agents/authorize?code=kX9mP2vL7qR4wY6t...
 
 # ── ADMIN ─────────────────────────────────────────────────
-# 3. Admin reviews and approves (via dashboard or API)
-#    POST /agent_registrations/:id/approve { role_id: 3 }
+# 3. Admin visits the authorization_url, reviews the agent, and approves
+#    (or via API: POST /agent_registrations/:unique_id/approve { role_id: 3 })
 
 # ── AGENT ─────────────────────────────────────────────────
 # 4. Check if approved
@@ -135,6 +143,76 @@ aid-request --auth https://auth.23blocks.com/zoom --poll
 # 5. Once approved, get tokens
 TOKEN=$(aid-token --auth https://auth.23blocks.com/zoom --quiet)
 ```
+
+#### Authorization URL
+
+When an agent-initiated registration is created, the auth server MUST return an `authorization_url` in the response. This is the URL the agent shows to a human admin so they can review and approve the request — similar to OAuth 2.0 Device Authorization (RFC 8628).
+
+**Standard path**: Auth server implementers SHOULD serve the agent authorization UI at a well-known path:
+
+```
+/agents/authorize?code={authorization_code}
+```
+
+This allows agents to predict the authorization URL from just the domain, without needing per-provider configuration.
+
+**Authorization code**: The `code` parameter MUST be a temporary, opaque token — NOT the agent's `unique_id` or any other permanent identifier. This prevents leaking system information when the URL is shared via email, Slack, or logs. The code SHOULD:
+- Be cryptographically random (e.g., 32 bytes, URL-safe base64)
+- Expire after a reasonable period (RECOMMENDED: 24 hours)
+- Be single-use or regenerated on each request
+- Resolve to the agent registration only via a server-side lookup
+
+**Response fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `authorization_url` | string | MUST | Full URL with pre-filled code (equivalent to RFC 8628's `verification_uri_complete`) |
+| `user_code` | string | MUST | Short, human-readable code (RECOMMENDED format: `XXXX-XXXX`, e.g., `ABCD-1234`). The admin can visit the base authorization URL and type this code manually instead of clicking the full URL. |
+| `expires_in` | integer | MUST | Seconds until the authorization code expires. Agents MUST stop polling after this period. |
+| `interval` | integer | MUST | Minimum seconds between polling requests (default: 5). Auth server SHOULD return HTTP 429 if agent polls faster. |
+
+**Response example:**
+```json
+{
+  "data": {
+    "type": "agent_registration",
+    "id": "4e6aa83e-e4d4-4b31-b519-1b493855c28d",
+    "attributes": {
+      "status": "pending",
+      "authorization_url": "https://acme.example.com/agents/authorize?code=kX9mP2vL7qR4wY6tN8sA...",
+      "user_code": "ABCD-1234",
+      "expires_in": 86400,
+      "interval": 5
+    }
+  }
+}
+```
+
+**Base Authorization URL**: Auth servers SHOULD expose a base authorization page at `/agents/authorize` (no query parameters). This is the equivalent of RFC 8628's `verification_uri` — a page where admins can manually type the `user_code` to look up and approve agent requests. The full `authorization_url` with `?code=xxx` is the pre-filled version (equivalent to RFC 8628's `verification_uri_complete`), allowing one-click approval when shared via email, Slack, or logs.
+
+**Resolving the code**: The auth server MUST provide an endpoint to resolve the authorization code into the full agent registration:
+
+```
+GET /agent_registrations/resolve?code={authorization_code}
+```
+
+This endpoint requires admin authentication (`agent_registrations:read` scope) and returns the agent registration details if the code is valid and not expired. Returns 404 if the code is invalid or expired.
+
+**How the URL is resolved:**
+
+The auth server builds the URL from the tenant's configured frontend domain. In multi-tenant architectures, each tenant may have their own admin UI:
+
+| Scenario | Authorization URL |
+|----------|------------------|
+| Tenant has custom domain | `https://acme.example.com/agents/authorize?code={code}` |
+| Tenant uses platform default | `https://platform.example.com/agents/authorize?code={code}` |
+
+The authorization page MUST:
+1. Call the resolve endpoint to look up the agent by authorization code
+2. Display the agent's name, address, and fingerprint for admin verification
+3. Allow the admin to select a role for the agent
+4. Call `POST /agent_registrations/:unique_id/approve` with the selected `role_id`
+5. Require the admin to be authenticated with `agent_registrations:write` scope
 
 **Security**: The agent-initiated flow does NOT bypass human approval. The agent submits its public key and a description of why it needs access. The registration is created in `pending` status — the agent cannot get tokens until an admin approves the request and assigns a role. The admin controls which role (and therefore which scopes) the agent receives. The agent never chooses its own permissions.
 
@@ -279,9 +357,10 @@ aid-request --auth https://auth.23blocks.com/acme --poll
 **What it does:**
 1. Reads the agent's Ed25519 public key and identity
 2. POSTs to `POST /agent_registrations/request` (no auth token required)
-3. Server creates a `pending` registration
-4. Stores the registration ID locally for polling
-5. With `--poll`, checks the current status of the pending request
+3. Server creates a `pending` registration and returns an `authorization_url`
+4. Displays the `authorization_url` for the admin to visit and approve
+5. Stores the registration ID locally for polling
+6. With `--poll`, checks the current status of the pending request
 
 ### `aid-token` — Request a JWT Token
 
@@ -474,10 +553,10 @@ aid-request ──> pending ──> active ──> suspended ──> active   (r
 | `deleted` | No | `active: false, reason: agent_not_found` |
 
 Admins control agent lifecycle via the registration API:
-- `POST /agent_registrations/:id/approve` — approve a pending request and assign a role
-- `POST /agent_registrations/:id/reject` — reject a pending request
-- `POST /agent_registrations/:id/suspend` — immediately block token issuance and invalidate via introspection
-- `POST /agent_registrations/:id/reactivate` — restore agent access
+- `POST /agent_registrations/:unique_id/approve` — approve a pending request and assign a role
+- `POST /agent_registrations/:unique_id/reject` — reject a pending request
+- `POST /agent_registrations/:unique_id/suspend` — immediately block token issuance and invalidate via introspection
+- `POST /agent_registrations/:unique_id/reactivate` — restore agent access
 
 ## Error Handling
 
@@ -489,6 +568,25 @@ Admins control agent lifecycle via the registration API:
 | `invalid_proof` | Proof of possession failed | Check system clock sync |
 | `invalid_scope` | Requested scopes exceed permissions | Try without `--scope` |
 | `agent_suspended` | Agent has been suspended by admin | Contact admin for reactivation |
+
+### Polling Error Responses (RFC 8628)
+
+When an agent polls for registration status, the auth server MUST return one of the following error codes aligned with [RFC 8628 Section 3.5](https://datatracker.ietf.org/doc/html/rfc8628#section-3.5):
+
+| Error | HTTP Status | Meaning | Agent Action |
+|-------|-------------|---------|--------------|
+| `authorization_pending` | 200 | Registration not yet approved | Keep polling at the specified `interval` |
+| `slow_down` | 429 | Agent is polling too frequently | Increase polling interval by 5 seconds |
+| `expired_token` | 410 | Authorization code has expired | Submit a new registration request with `aid-request` |
+| `access_denied` | 403 | Admin rejected the registration request | Do not retry; contact admin or submit a new request |
+
+**Example error response:**
+```json
+{
+  "error": "slow_down",
+  "error_description": "Polling too frequently. Increase interval to 10 seconds."
+}
+```
 
 ## Security
 
@@ -505,7 +603,8 @@ Admins control agent lifecycle via the registration API:
 To support AID, your OAuth 2.0 server needs:
 
 1. **Agent Registration endpoint** — `POST /agent_registrations` (admin-initiated) and `POST /agent_registrations/request` (agent-initiated, creates `pending` registration)
-1. **Registration approval** — `POST /agent_registrations/:id/approve` with role assignment, `POST /agent_registrations/:id/reject`
+1. **Registration approval** — `POST /agent_registrations/:unique_id/approve` with role assignment, `POST /agent_registrations/:unique_id/reject`
+1. **Authorization URL** — return `authorization_url` with a temporary opaque code in agent-initiated registration responses, and a `GET /agent_registrations/resolve?code={code}` endpoint for the admin UI to resolve it
 2. **Token endpoint** — `POST /oauth/token` supporting `grant_type=urn:aid:agent-identity`
 3. **Ed25519 verification** — validate Agent Identity signatures and proof of possession
 4. **JWKS endpoint** — `GET /.well-known/jwks.json` so target APIs can validate issued JWTs

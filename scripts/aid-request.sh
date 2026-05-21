@@ -213,9 +213,11 @@ if [ "$POLL_MODE" = true ]; then
                 echo "    aid-token --auth ${AUTH_URL}"
                 ;;
             pending)
+                POLL_INTERVAL=$(jq -r '.interval // "5"' "$REG_FILE" 2>/dev/null)
                 echo "Registration still PENDING"
                 echo ""
                 echo "  Your request is waiting for admin approval."
+                echo "  Poll again in ${POLL_INTERVAL} seconds"
                 echo "  Check again later with:"
                 echo "    aid-request --auth ${AUTH_URL} --poll"
                 ;;
@@ -325,6 +327,9 @@ if [ "$HTTP_STATUS" = "201" ] || [ "$HTTP_STATUS" = "202" ]; then
     REG_NAME=$(echo "$HTTP_BODY" | jq -r '.data.attributes.name // "?"')
     REG_STATUS=$(echo "$HTTP_BODY" | jq -r '.data.attributes.status // "pending"')
     AUTH_APPROVE_URL=$(echo "$HTTP_BODY" | jq -r '.data.attributes.authorization_url // empty' 2>/dev/null)
+    USER_CODE=$(echo "$HTTP_BODY" | jq -r '.data.attributes.user_code // empty' 2>/dev/null)
+    EXPIRES_IN=$(echo "$HTTP_BODY" | jq -r '.data.attributes.expires_in // empty' 2>/dev/null)
+    INTERVAL=$(echo "$HTTP_BODY" | jq -r '.data.attributes.interval // "5"' 2>/dev/null)
 
     # Save registration info locally
     jq -n \
@@ -333,6 +338,9 @@ if [ "$HTTP_STATUS" = "201" ] || [ "$HTTP_STATUS" = "202" ]; then
         --arg name "$REG_NAME" \
         --arg status "$REG_STATUS" \
         --arg authorization_url "${AUTH_APPROVE_URL:-}" \
+        --arg user_code "${USER_CODE:-}" \
+        --arg expires_in "${EXPIRES_IN:-}" \
+        --arg interval "${INTERVAL:-5}" \
         --arg requested_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         '{
             auth_server: $auth_server,
@@ -340,6 +348,9 @@ if [ "$HTTP_STATUS" = "201" ] || [ "$HTTP_STATUS" = "202" ]; then
             name: $name,
             status: $status,
             authorization_url: $authorization_url,
+            user_code: $user_code,
+            expires_in: ($expires_in | if . != "" then tonumber else null end),
+            interval: ($interval | tonumber),
             requested_at: $requested_at
         }' > "$REG_FILE"
     chmod 600 "$REG_FILE"
@@ -350,20 +361,34 @@ if [ "$HTTP_STATUS" = "201" ] || [ "$HTTP_STATUS" = "202" ]; then
     echo "  Name:       ${REG_NAME}"
     echo "  Status:     ${REG_STATUS}"
     echo "  Auth:       ${AUTH_URL}"
+    if [ -n "$USER_CODE" ]; then
+        echo ""
+        echo "  Your authorization code: ${USER_CODE}"
+    fi
     if [ -n "$AUTH_APPROVE_URL" ]; then
         echo ""
         echo "  Authorization URL (share with your admin):"
         echo "    ${AUTH_APPROVE_URL}"
     fi
+    if [ -n "$EXPIRES_IN" ]; then
+        EXPIRES_HOURS=$(( EXPIRES_IN / 3600 ))
+        echo ""
+        echo "  Expires in: ${EXPIRES_IN} seconds (~${EXPIRES_HOURS} hours)"
+    fi
     echo ""
     echo "  Saved to: ${REG_FILE}"
     echo ""
     echo "  An admin must approve your request before you can get tokens."
-    if [ -n "$AUTH_APPROVE_URL" ]; then
+    if [ -n "$USER_CODE" ]; then
+        echo "  Admin can visit the authorization URL or enter code ${USER_CODE} at the server."
+    elif [ -n "$AUTH_APPROVE_URL" ]; then
         echo "  Share the authorization URL above with your admin."
     fi
     echo "  Check status with:"
     echo "    aid-request --auth ${AUTH_URL} --poll"
+    if [ -n "$INTERVAL" ]; then
+        echo "  Poll again in ${INTERVAL} seconds"
+    fi
 
 elif [ "$HTTP_STATUS" = "422" ]; then
     ERROR_DETAIL=$(echo "$HTTP_BODY" | jq -r '.errors[0].detail // .error // "Validation failed"' 2>/dev/null)

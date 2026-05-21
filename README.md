@@ -162,6 +162,15 @@ This allows agents to predict the authorization URL from just the domain, withou
 - Be single-use or regenerated on each request
 - Resolve to the agent registration only via a server-side lookup
 
+**Response fields:**
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| `authorization_url` | string | MUST | Full URL with pre-filled code (equivalent to RFC 8628's `verification_uri_complete`) |
+| `user_code` | string | MUST | Short, human-readable code (RECOMMENDED format: `XXXX-XXXX`, e.g., `ABCD-1234`). The admin can visit the base authorization URL and type this code manually instead of clicking the full URL. |
+| `expires_in` | integer | MUST | Seconds until the authorization code expires. Agents MUST stop polling after this period. |
+| `interval` | integer | MUST | Minimum seconds between polling requests (default: 5). Auth server SHOULD return HTTP 429 if agent polls faster. |
+
 **Response example:**
 ```json
 {
@@ -170,11 +179,16 @@ This allows agents to predict the authorization URL from just the domain, withou
     "id": "4e6aa83e-e4d4-4b31-b519-1b493855c28d",
     "attributes": {
       "status": "pending",
-      "authorization_url": "https://acme.example.com/agents/authorize?code=kX9mP2vL7qR4wY6tN8sA..."
+      "authorization_url": "https://acme.example.com/agents/authorize?code=kX9mP2vL7qR4wY6tN8sA...",
+      "user_code": "ABCD-1234",
+      "expires_in": 86400,
+      "interval": 5
     }
   }
 }
 ```
+
+**Base Authorization URL**: Auth servers SHOULD expose a base authorization page at `/agents/authorize` (no query parameters). This is the equivalent of RFC 8628's `verification_uri` — a page where admins can manually type the `user_code` to look up and approve agent requests. The full `authorization_url` with `?code=xxx` is the pre-filled version (equivalent to RFC 8628's `verification_uri_complete`), allowing one-click approval when shared via email, Slack, or logs.
 
 **Resolving the code**: The auth server MUST provide an endpoint to resolve the authorization code into the full agent registration:
 
@@ -554,6 +568,25 @@ Admins control agent lifecycle via the registration API:
 | `invalid_proof` | Proof of possession failed | Check system clock sync |
 | `invalid_scope` | Requested scopes exceed permissions | Try without `--scope` |
 | `agent_suspended` | Agent has been suspended by admin | Contact admin for reactivation |
+
+### Polling Error Responses (RFC 8628)
+
+When an agent polls for registration status, the auth server MUST return one of the following error codes aligned with [RFC 8628 Section 3.5](https://datatracker.ietf.org/doc/html/rfc8628#section-3.5):
+
+| Error | HTTP Status | Meaning | Agent Action |
+|-------|-------------|---------|--------------|
+| `authorization_pending` | 200 | Registration not yet approved | Keep polling at the specified `interval` |
+| `slow_down` | 429 | Agent is polling too frequently | Increase polling interval by 5 seconds |
+| `expired_token` | 410 | Authorization code has expired | Submit a new registration request with `aid-request` |
+| `access_denied` | 403 | Admin rejected the registration request | Do not retry; contact admin or submit a new request |
+
+**Example error response:**
+```json
+{
+  "error": "slow_down",
+  "error_description": "Polling too frequently. Increase interval to 10 seconds."
+}
+```
 
 ## Security
 

@@ -91,14 +91,20 @@ The agent requests access on its own. An admin approves it later.
        │  {public_key, address, fingerprint}  │
        │─────────────────────────────────────>│
        │                                      │
-       │  2. 202 Accepted (status: pending)   │
+       │  2. 202 Accepted                      │
+       │  {status: pending,                   │
+       │   authorization_url: https://...}    │
        │<─────────────────────────────────────│
+       │                                      │
+       │  2b. Agent shows authorization_url   │
+       │      to human admin                  │
        │                                      │
        │         ┌──────────────┐             │
        │         │  Human Admin  │             │
        │         └──────┬────────┘             │
        │                │                      │
-       │                │  3. Review + approve │
+       │                │  3. Visit URL +      │
+       │                │     approve          │
        │                │  POST /agent_registrations/:id/approve
        │                │  {role_id: 3}        │
        │                │─────────────────────>│
@@ -123,10 +129,12 @@ aid-init --name support-agent
 # 2. Request registration (no admin token needed)
 aid-request --auth https://auth.23blocks.com/zoom \
   --description "Handles customer support ticket triage"
+# → Returns authorization_url for admin approval
+# → e.g. https://app.23blocks.com/agents/authorize?code=4e6aa83e-...
 
 # ── ADMIN ─────────────────────────────────────────────────
-# 3. Admin reviews and approves (via dashboard or API)
-#    POST /agent_registrations/:id/approve { role_id: 3 }
+# 3. Admin visits the authorization_url, reviews the agent, and approves
+#    (or via API: POST /agent_registrations/:id/approve { role_id: 3 })
 
 # ── AGENT ─────────────────────────────────────────────────
 # 4. Check if approved
@@ -135,6 +143,47 @@ aid-request --auth https://auth.23blocks.com/zoom --poll
 # 5. Once approved, get tokens
 TOKEN=$(aid-token --auth https://auth.23blocks.com/zoom --quiet)
 ```
+
+#### Authorization URL
+
+When an agent-initiated registration is created, the auth server MUST return an `authorization_url` in the response. This is the URL the agent shows to a human admin so they can review and approve the request — similar to OAuth 2.0 Device Authorization (RFC 8628).
+
+**Standard path**: Auth server implementers SHOULD serve the agent authorization UI at a well-known path:
+
+```
+/agents/authorize?code={unique_id}
+```
+
+This allows agents to predict the authorization URL from just the domain, without needing per-provider configuration.
+
+**Response example:**
+```json
+{
+  "data": {
+    "type": "agent_registration",
+    "id": "4e6aa83e-e4d4-4b31-b519-1b493855c28d",
+    "attributes": {
+      "status": "pending",
+      "authorization_url": "https://acme.example.com/agents/authorize?code=4e6aa83e-e4d4-4b31-b519-1b493855c28d"
+    }
+  }
+}
+```
+
+**How the URL is resolved:**
+
+The auth server builds the URL from the tenant's configured frontend domain. In multi-tenant architectures, each tenant may have their own admin UI:
+
+| Scenario | Authorization URL |
+|----------|------------------|
+| Tenant has custom domain | `https://acme.example.com/agents/authorize?code={id}` |
+| Tenant uses platform default | `https://platform.example.com/agents/authorize?code={id}` |
+
+The authorization page MUST:
+1. Display the agent's name, address, and fingerprint for admin verification
+2. Allow the admin to select a role for the agent
+3. Call `POST /agent_registrations/:id/approve` with the selected `role_id`
+4. Require the admin to be authenticated with `agent_registrations:write` scope
 
 **Security**: The agent-initiated flow does NOT bypass human approval. The agent submits its public key and a description of why it needs access. The registration is created in `pending` status — the agent cannot get tokens until an admin approves the request and assigns a role. The admin controls which role (and therefore which scopes) the agent receives. The agent never chooses its own permissions.
 
@@ -279,9 +328,10 @@ aid-request --auth https://auth.23blocks.com/acme --poll
 **What it does:**
 1. Reads the agent's Ed25519 public key and identity
 2. POSTs to `POST /agent_registrations/request` (no auth token required)
-3. Server creates a `pending` registration
-4. Stores the registration ID locally for polling
-5. With `--poll`, checks the current status of the pending request
+3. Server creates a `pending` registration and returns an `authorization_url`
+4. Displays the `authorization_url` for the admin to visit and approve
+5. Stores the registration ID locally for polling
+6. With `--poll`, checks the current status of the pending request
 
 ### `aid-token` — Request a JWT Token
 
@@ -506,6 +556,7 @@ To support AID, your OAuth 2.0 server needs:
 
 1. **Agent Registration endpoint** — `POST /agent_registrations` (admin-initiated) and `POST /agent_registrations/request` (agent-initiated, creates `pending` registration)
 1. **Registration approval** — `POST /agent_registrations/:id/approve` with role assignment, `POST /agent_registrations/:id/reject`
+1. **Authorization URL** — return `authorization_url` in agent-initiated registration responses, pointing to your admin UI at `/agents/authorize?code={id}`
 2. **Token endpoint** — `POST /oauth/token` supporting `grant_type=urn:aid:agent-identity`
 3. **Ed25519 verification** — validate Agent Identity signatures and proof of possession
 4. **JWKS endpoint** — `GET /.well-known/jwks.json` so target APIs can validate issued JWTs

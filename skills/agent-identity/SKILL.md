@@ -148,16 +148,17 @@ aid-token.sh --auth https://auth.23blocks.com/acme --scope "files:read files:wri
 
 **Parameters:**
 - `--auth, -a` — Auth server URL (required)
+- `--api-key, -k` — API key (X-Api-Key header)
 - `--scope, -s` — Space-separated scopes (optional)
 - `--json, -j` — Output as JSON
 - `--quiet, -q` — Output only the token string
 - `--no-cache` — Skip token cache
 
 **What it does:**
-1. Builds a fresh Agent Identity Document with current timestamp
-2. Creates a Proof of Possession (`aid-token-exchange\n{timestamp}\n{auth_issuer}`)
+1. Builds a fresh Agent Identity Document with current timestamp (canonical JSON: sorted keys, compact)
+2. Creates a Proof of Possession (`aid-token-exchange\n{timestamp}\n{oidc_issuer}`)
 3. Signs the proof with the agent's Ed25519 private key
-4. POSTs to the OAuth token endpoint with `grant_type=urn:aid:agent-identity`
+4. POSTs to the token endpoint resolved from the registration file (falls back to `{auth_url}/oauth/token`)
 5. Returns the JWT access token (cached for reuse)
 
 ### aid-status.sh — Check Identity & Registration Status
@@ -192,19 +193,23 @@ A signed JSON document proving the agent's identity:
 The agent signs a challenge proving it holds the private key:
 
 ```
-aid-token-exchange\n{timestamp}\n{auth_server_url}
+aid-token-exchange\n{timestamp}\n{oidc_issuer}
 ```
+
+The `oidc_issuer` is the auth server's OIDC issuer URL for the tenant (e.g., `https://auth.example.com/apps/tenant-id`). This is returned in the registration response and stored locally. Falls back to the `--auth` URL if not available.
 
 ### Step 3: Token Exchange
 
 ```
-POST /oauth/token
+POST {token_endpoint}
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=urn%3Aaid%3Aagent-identity
 &agent_identity={base64url-identity-document}
 &proof={base64url-signed-proof}
 ```
+
+The `token_endpoint` is resolved from the registration file (returned by the auth server during registration/approval). Falls back to `{auth_url}/oauth/token` if not stored.
 
 ### Step 4: Use the JWT
 

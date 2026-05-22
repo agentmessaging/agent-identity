@@ -221,7 +221,7 @@ fi
 
 PUBLIC_KEY_PEM=$(cat "$PUBLIC_KEY")
 
-AGENT_IDENTITY=$(jq -cS -n \
+AGENT_IDENTITY=$(jq -n \
     --arg version "1.0" \
     --arg address "$AMP_ADDRESS" \
     --arg alias "$AMP_AGENT_NAME" \
@@ -239,7 +239,7 @@ AGENT_IDENTITY=$(jq -cS -n \
         fingerprint: $fingerprint,
         issued_at: $issued_at,
         expires_at: $expires_at
-    }')
+    }' | jq -cS .)
 
 # Sign the canonical JSON (sorted keys, compact, no whitespace)
 IDENTITY_SIGNATURE=$(sign_message "$AGENT_IDENTITY")
@@ -255,13 +255,27 @@ SIGNED_IDENTITY=$(echo "$AGENT_IDENTITY" | jq --arg sig "$IDENTITY_SIGNATURE" '.
 AGENT_IDENTITY_B64=$(echo -n "$SIGNED_IDENTITY" | base64 | tr '+/' '-_' | tr -d '=\n')
 
 # =============================================================================
+# Resolve registration file (needed for token_endpoint and oidc_issuer)
+# =============================================================================
+
+AID_REG_DIR="${AMP_DIR}/api_registrations"
+AUTH_HOST=$(echo "$AUTH_URL" | sed -E 's|https?://||' | cut -d/ -f1)
+REG_FILE="${AID_REG_DIR}/${AUTH_HOST}.json"
+
+# =============================================================================
 # Build Proof of Possession
 # =============================================================================
 
 TIMESTAMP=$(date +%s)
 
-# The issuer is the auth server URL
-AUTH_ISSUER="$AUTH_URL"
+# The issuer for the proof: check registration file for oidc_issuer, fall back to AUTH_URL
+AUTH_ISSUER=""
+if [ -f "$REG_FILE" ]; then
+    AUTH_ISSUER=$(jq -r '.oidc_issuer // empty' "$REG_FILE" 2>/dev/null)
+fi
+if [ -z "$AUTH_ISSUER" ]; then
+    AUTH_ISSUER="$AUTH_URL"
+fi
 
 SIGN_INPUT="aid-token-exchange
 ${TIMESTAMP}
@@ -287,13 +301,8 @@ PROOF_B64=$(
 # Token Request
 # =============================================================================
 
-# Resolve the token endpoint URL:
-# 1. Check registration file for token_endpoint (returned by the auth server)
-# 2. Fall back to ${AUTH_URL}/oauth/token
+# Resolve the token endpoint URL from registration file, fall back to AUTH_URL
 TOKEN_URL=""
-AID_REG_DIR="${AMP_DIR}/api_registrations"
-AUTH_HOST=$(echo "$AUTH_URL" | sed -E 's|https?://||' | cut -d/ -f1)
-REG_FILE="${AID_REG_DIR}/${AUTH_HOST}.json"
 if [ -f "$REG_FILE" ]; then
     TOKEN_URL=$(jq -r '.token_endpoint // empty' "$REG_FILE" 2>/dev/null)
 fi

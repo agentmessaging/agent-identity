@@ -221,7 +221,7 @@ fi
 
 PUBLIC_KEY_PEM=$(cat "$PUBLIC_KEY")
 
-AGENT_IDENTITY=$(jq -n \
+AGENT_IDENTITY=$(jq -cS -n \
     --arg version "1.0" \
     --arg address "$AMP_ADDRESS" \
     --arg alias "$AMP_AGENT_NAME" \
@@ -241,7 +241,7 @@ AGENT_IDENTITY=$(jq -n \
         expires_at: $expires_at
     }')
 
-# Sign the Agent Identity (sign everything except the signature field itself)
+# Sign the canonical JSON (sorted keys, compact, no whitespace)
 IDENTITY_SIGNATURE=$(sign_message "$AGENT_IDENTITY")
 if [ -z "$IDENTITY_SIGNATURE" ]; then
     echo "Error: Failed to sign Agent Identity" >&2

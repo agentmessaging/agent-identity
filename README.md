@@ -373,6 +373,7 @@ aid-token --auth <url> [options]
 | Flag | Description |
 |------|-------------|
 | `--auth, -a` | Auth server URL (required) |
+| `--api-key, -k` | API key (X-Api-Key header) |
 | `--scope, -s` | Space-separated scopes (default: all registered) |
 | `--json, -j` | Output as JSON |
 | `--quiet, -q` | Output only the token (for piping) |
@@ -417,7 +418,7 @@ AID uses a custom OAuth 2.0 grant type: `urn:aid:agent-identity`
 
 **Token request:**
 ```
-POST /oauth/token
+POST {token_endpoint}
 Content-Type: application/x-www-form-urlencoded
 
 grant_type=urn%3Aaid%3Aagent-identity
@@ -426,26 +427,22 @@ grant_type=urn%3Aaid%3Aagent-identity
 &scope=files%3Aread+files%3Awrite
 ```
 
-**Agent Identity** (JSON, base64url-encoded):
+The `token_endpoint` is resolved from the registration file (returned by the auth server during registration/approval). Falls back to `{auth_url}/oauth/token`.
+
+**Agent Identity** (canonical JSON — sorted keys, compact, no whitespace — then base64url-encoded):
 ```json
-{
-  "aid_version": "1.0",
-  "address": "agent-name@org.local",
-  "alias": "agent-name",
-  "public_key": "-----BEGIN PUBLIC KEY-----\n...",
-  "key_algorithm": "Ed25519",
-  "fingerprint": "abc123...",
-  "issued_at": "2026-03-21T00:00:00Z",
-  "expires_at": "2026-09-21T00:00:00Z",
-  "signature": "<base64url-ed25519-signature>"
-}
+{"address":"agent-name@org.local","aid_version":"1.0","alias":"agent-name","expires_at":"2026-09-21T00:00:00Z","fingerprint":"abc123...","issued_at":"2026-03-21T00:00:00Z","key_algorithm":"Ed25519","public_key":"-----BEGIN PUBLIC KEY-----\\n...","signature":"<base64url-ed25519-signature>"}
 ```
+
+The identity MUST be signed in canonical form (alphabetically sorted keys, compact JSON with no extra whitespace). The `signature` field is added AFTER signing — the signed payload excludes it.
 
 **Proof of Possession:**
 ```
-sign_input = "aid-token-exchange\n{unix_timestamp}\n{auth_server_url}"
+sign_input = "aid-token-exchange\n{unix_timestamp}\n{oidc_issuer}"
 proof = base64url(ed25519_sign(sign_input) + timestamp_string)
 ```
+
+The `oidc_issuer` is the auth server's OIDC issuer URL for the tenant (e.g., `https://auth.example.com/apps/tenant-id`), stored in the registration file after approval. Falls back to the `--auth` URL if not available.
 
 The proof has a 5-minute validity window to prevent replay attacks.
 
@@ -605,12 +602,13 @@ To support AID, your OAuth 2.0 server needs:
 1. **Agent Registration endpoint** — `POST /agent_registrations` (admin-initiated) and `POST /agent_registrations/request` (agent-initiated, creates `pending` registration)
 1. **Registration approval** — `POST /agent_registrations/:unique_id/approve` with role assignment, `POST /agent_registrations/:unique_id/reject`
 1. **Authorization URL** — return `authorization_url` with a temporary opaque code in agent-initiated registration responses, and a `GET /agent_registrations/resolve?code={code}` endpoint for the admin UI to resolve it
-2. **Token endpoint** — `POST /oauth/token` supporting `grant_type=urn:aid:agent-identity`
-3. **Ed25519 verification** — validate Agent Identity signatures and proof of possession
+2. **Token endpoint** — `POST /{tenant}/oauth/token` supporting `grant_type=urn:aid:agent-identity`
+3. **Ed25519 verification** — validate Agent Identity signatures (canonical JSON) and proof of possession
 4. **JWKS endpoint** — `GET /.well-known/jwks.json` so target APIs can validate issued JWTs
 5. **OIDC discovery** — advertise `urn:aid:agent-identity` in `grant_types_supported`
 6. **Introspection endpoint** — `POST /oauth/introspect` (RFC 7662) for real-time token validation
 7. **Lifecycle management** — suspend/reactivate endpoints for admin control
+8. **Registration response metadata** — return `token_endpoint` and `oidc_issuer` in registration/approval responses so agents can resolve these without guessing tenant paths
 
 **Target APIs** (the services your agents call) can:
 - **Minimal**: Validate RS256 JWTs using the auth server's JWKS endpoint (no AID-specific code)

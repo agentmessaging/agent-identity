@@ -195,10 +195,17 @@ if [ "$POLL_MODE" = true ]; then
 
     if [ "$HTTP_STATUS" = "200" ]; then
         REG_STATUS=$(echo "$HTTP_BODY" | jq -r '.data.attributes.status // .status // "unknown"' 2>/dev/null)
+        POLL_TOKEN_ENDPOINT=$(echo "$HTTP_BODY" | jq -r '.data.attributes.token_endpoint // empty' 2>/dev/null)
 
-        # Update local file
-        jq --arg status "$REG_STATUS" '.status = $status' "$REG_FILE" > "${REG_FILE}.tmp" && \
-            mv "${REG_FILE}.tmp" "$REG_FILE"
+        # Update local file with status and token_endpoint
+        if [ -n "$POLL_TOKEN_ENDPOINT" ]; then
+            jq --arg status "$REG_STATUS" --arg te "$POLL_TOKEN_ENDPOINT" \
+                '.status = $status | .token_endpoint = $te' "$REG_FILE" > "${REG_FILE}.tmp" && \
+                mv "${REG_FILE}.tmp" "$REG_FILE"
+        else
+            jq --arg status "$REG_STATUS" '.status = $status' "$REG_FILE" > "${REG_FILE}.tmp" && \
+                mv "${REG_FILE}.tmp" "$REG_FILE"
+        fi
         chmod 600 "$REG_FILE"
 
         case "$REG_STATUS" in
@@ -208,6 +215,9 @@ if [ "$POLL_MODE" = true ]; then
                 echo ""
                 echo "  Status:  ${REG_STATUS}"
                 echo "  Role:    ${ROLE_NAME}"
+                if [ -n "$POLL_TOKEN_ENDPOINT" ]; then
+                    echo "  Token:   ${POLL_TOKEN_ENDPOINT}"
+                fi
                 echo ""
                 echo "  Get a token with:"
                 echo "    aid-token --auth ${AUTH_URL}"
@@ -330,6 +340,7 @@ if [ "$HTTP_STATUS" = "201" ] || [ "$HTTP_STATUS" = "202" ]; then
     USER_CODE=$(echo "$HTTP_BODY" | jq -r '.data.attributes.user_code // empty' 2>/dev/null)
     EXPIRES_IN=$(echo "$HTTP_BODY" | jq -r '.data.attributes.expires_in // empty' 2>/dev/null)
     INTERVAL=$(echo "$HTTP_BODY" | jq -r '.data.attributes.interval // "5"' 2>/dev/null)
+    TOKEN_ENDPOINT=$(echo "$HTTP_BODY" | jq -r '.data.attributes.token_endpoint // empty' 2>/dev/null)
 
     # Save registration info locally
     jq -n \
@@ -341,6 +352,7 @@ if [ "$HTTP_STATUS" = "201" ] || [ "$HTTP_STATUS" = "202" ]; then
         --arg user_code "${USER_CODE:-}" \
         --arg expires_in "${EXPIRES_IN:-}" \
         --arg interval "${INTERVAL:-5}" \
+        --arg token_endpoint "${TOKEN_ENDPOINT:-}" \
         --arg requested_at "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
         '{
             auth_server: $auth_server,
@@ -351,6 +363,7 @@ if [ "$HTTP_STATUS" = "201" ] || [ "$HTTP_STATUS" = "202" ]; then
             user_code: $user_code,
             expires_in: ($expires_in | if . != "" then tonumber else null end),
             interval: ($interval | tonumber),
+            token_endpoint: (if $token_endpoint != "" then $token_endpoint else null end),
             requested_at: $requested_at
         }' > "$REG_FILE"
     chmod 600 "$REG_FILE"

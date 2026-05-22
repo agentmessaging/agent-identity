@@ -287,8 +287,19 @@ PROOF_B64=$(
 # Token Request
 # =============================================================================
 
-# Build the OAuth token endpoint URL
-TOKEN_URL="${AUTH_URL}/oauth/token"
+# Resolve the token endpoint URL:
+# 1. Check registration file for token_endpoint (returned by the auth server)
+# 2. Fall back to ${AUTH_URL}/oauth/token
+TOKEN_URL=""
+AID_REG_DIR="${AMP_DIR}/api_registrations"
+AUTH_HOST=$(echo "$AUTH_URL" | sed -E 's|https?://||' | cut -d/ -f1)
+REG_FILE="${AID_REG_DIR}/${AUTH_HOST}.json"
+if [ -f "$REG_FILE" ]; then
+    TOKEN_URL=$(jq -r '.token_endpoint // empty' "$REG_FILE" 2>/dev/null)
+fi
+if [ -z "$TOKEN_URL" ]; then
+    TOKEN_URL="${AUTH_URL}/oauth/token"
+fi
 
 # Build form body
 FORM_DATA="grant_type=urn%3Aaid%3Aagent-identity&agent_identity=${AGENT_IDENTITY_B64}&proof=${PROOF_B64}"

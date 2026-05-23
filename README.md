@@ -301,6 +301,29 @@ aid-init --name my-agent     # Specify agent name
 | `--name, -n` | Specify agent name |
 | `--force, -f` | Overwrite existing identity |
 
+### `aid-discover` — Discover an Auth Server from a Resource URL
+
+Walks the [RFC 9728](https://datatracker.ietf.org/doc/rfc9728/) Protected Resource Metadata → [RFC 8414](https://datatracker.ietf.org/doc/rfc8414/) Authorization Server Metadata chain to find an AID-enabled auth server. Lets you point any AID command at a protected resource URL instead of a per-tenant auth URL.
+
+```bash
+aid-discover --resource <url>            # Human-readable
+aid-discover -r <url> --json             # Full discovery blob
+AUTH=$(aid-discover -r <url> --quiet)    # Just the auth server URL
+```
+
+| Flag | Description |
+|------|-------------|
+| `--resource, -r` | Protected resource URL (required) |
+| `--json, -j` | Output the full discovery blob as JSON |
+| `--quiet, -q` | Output only the auth server URL (for piping) |
+
+Other AID commands accept `--resource` directly and resolve discovery internally:
+
+```bash
+aid-request --resource https://api.acme.com
+aid-token --resource https://api.acme.com --quiet
+```
+
 ### `aid-register` — Register with an Auth Server
 
 One-time registration that links your agent's Ed25519 identity to a tenant with a specific role.
@@ -466,6 +489,88 @@ This prevents scope escalation — an agent cannot request permissions beyond wh
 }
 ```
 
+## Discovery (RFC 9728 / RFC 8414)
+
+AID is discoverable through standard OAuth metadata documents. An agent that knows only the URL of a protected resource can discover the auth server, the AID grant endpoints, and the supported scopes without any per-tenant configuration.
+
+This mirrors the structure used by [WorkOS auth.md](https://github.com/workos/auth.md) (`agent_auth` block) and is intentionally **side-by-side compatible**: an auth server can advertise both AID's `aid_grant` and auth.md's `agent_auth` blocks on the same metadata document.
+
+### Step 1 — Protected Resource Metadata (RFC 9728)
+
+The target API publishes [RFC 9728 Protected Resource Metadata](https://datatracker.ietf.org/doc/rfc9728/) at `/.well-known/oauth-protected-resource`. This is standard OAuth — no AID-specific fields.
+
+```http
+GET https://api.acme.com/.well-known/oauth-protected-resource
+```
+
+```json
+{
+  "resource": "https://api.acme.com/",
+  "resource_name": "Acme API",
+  "authorization_servers": ["https://auth.acme.com/zoom"],
+  "scopes_supported": ["files:read", "files:write", "tickets:read"],
+  "bearer_methods_supported": ["header"]
+}
+```
+
+Target APIs MAY also return this URL via a `WWW-Authenticate: Bearer resource_metadata="…"` header on 401 responses, so agents discover the metadata document on first denied request.
+
+### Step 2 — Authorization Server Metadata (RFC 8414 + `aid_grant`)
+
+The auth server publishes [RFC 8414 Authorization Server Metadata](https://datatracker.ietf.org/doc/rfc8414/) at `/.well-known/oauth-authorization-server`. It MUST advertise `urn:aid:agent-identity` in `grant_types_supported` and SHOULD include an `aid_grant` block listing the AID-specific endpoints:
+
+```http
+GET https://auth.acme.com/zoom/.well-known/oauth-authorization-server
+```
+
+```json
+{
+  "issuer": "https://auth.acme.com/zoom",
+  "token_endpoint": "https://auth.acme.com/zoom/oauth/token",
+  "introspection_endpoint": "https://auth.acme.com/zoom/oauth/introspect",
+  "jwks_uri": "https://auth.acme.com/zoom/.well-known/jwks.json",
+  "grant_types_supported": [
+    "urn:aid:agent-identity",
+    "client_credentials"
+  ],
+  "scopes_supported": ["files:read", "files:write", "tickets:read"],
+  "aid_grant": {
+    "aid_version": "1.0",
+    "registration_endpoint": "https://auth.acme.com/zoom/agent_registrations",
+    "registration_request_endpoint": "https://auth.acme.com/zoom/agent_registrations/request",
+    "code_resolution_endpoint": "https://auth.acme.com/zoom/agent_registrations/resolve",
+    "agent_authorization_uri": "https://app.acme.com/agents/authorize",
+    "key_algorithms_supported": ["Ed25519"],
+    "credential_types_supported": ["access_token"],
+    "polling_interval": 5
+  }
+}
+```
+
+### `aid_grant` block fields
+
+| Field | Required | Description |
+|---|---|---|
+| `aid_version` | MUST | Protocol version this server implements (currently `"1.0"`) |
+| `registration_endpoint` | MUST | URL for admin-initiated registration (POST with admin JWT) |
+| `registration_request_endpoint` | MUST | URL for agent-initiated registration (no admin token; creates `pending`) |
+| `code_resolution_endpoint` | SHOULD | URL the admin UI uses to resolve an authorization `code` into a registration |
+| `agent_authorization_uri` | SHOULD | Base URL for the admin approval page (the `verification_uri` from RFC 8628) |
+| `key_algorithms_supported` | MUST | Array of Ed25519 (and future algorithms); clients MUST reject if their key algorithm is absent |
+| `credential_types_supported` | MAY | Array of credential formats issued (currently always `["access_token"]`; reserved for future opaque API key support) |
+| `polling_interval` | MAY | Default `interval` returned in agent-initiated registration responses; clients SHOULD treat per-registration `interval` as authoritative |
+
+### Step 3 — Use the discovered endpoints
+
+Once the agent has resolved the `aid_grant` block, it has everything needed for the standard AID flow:
+
+- `registration_endpoint` / `registration_request_endpoint` for `aid-register` / `aid-request`
+- `token_endpoint` for `aid-token`
+- `introspection_endpoint` for target APIs that want real-time validation
+- `scopes_supported` to know what `--scope` values are valid
+
+A client that supports discovery (`aid-discover` or `--resource` on token/request commands) replaces per-tenant `--auth` configuration with a single resource URL.
+
 ## Token Introspection (RFC 7662)
 
 Target APIs can verify agent tokens in real-time using the introspection endpoint. This is especially useful for checking if an agent has been suspended since the token was issued.
@@ -600,21 +705,34 @@ When an agent polls for registration status, the auth server MUST return one of 
 To support AID, your OAuth 2.0 server needs:
 
 1. **Agent Registration endpoint** — `POST /agent_registrations` (admin-initiated) and `POST /agent_registrations/request` (agent-initiated, creates `pending` registration)
-1. **Registration approval** — `POST /agent_registrations/:unique_id/approve` with role assignment, `POST /agent_registrations/:unique_id/reject`
-1. **Authorization URL** — return `authorization_url` with a temporary opaque code in agent-initiated registration responses, and a `GET /agent_registrations/resolve?code={code}` endpoint for the admin UI to resolve it
-2. **Token endpoint** — `POST /{tenant}/oauth/token` supporting `grant_type=urn:aid:agent-identity`
-3. **Ed25519 verification** — validate Agent Identity signatures (canonical JSON) and proof of possession
-4. **JWKS endpoint** — `GET /.well-known/jwks.json` so target APIs can validate issued JWTs
-5. **OIDC discovery** — advertise `urn:aid:agent-identity` in `grant_types_supported`
-6. **Introspection endpoint** — `POST /oauth/introspect` (RFC 7662) for real-time token validation
-7. **Lifecycle management** — suspend/reactivate endpoints for admin control
-8. **Registration response metadata** — return `token_endpoint` and `oidc_issuer` in registration/approval responses so agents can resolve these without guessing tenant paths
+2. **Registration approval** — `POST /agent_registrations/:unique_id/approve` with role assignment, `POST /agent_registrations/:unique_id/reject`
+3. **Authorization URL** — return `authorization_url` with a temporary opaque code in agent-initiated registration responses, and a `GET /agent_registrations/resolve?code={code}` endpoint for the admin UI to resolve it
+4. **Token endpoint** — `POST /{tenant}/oauth/token` supporting `grant_type=urn:aid:agent-identity`
+5. **Ed25519 verification** — validate Agent Identity signatures (canonical JSON) and proof of possession
+6. **JWKS endpoint** — `GET /.well-known/jwks.json` so target APIs can validate issued JWTs
+7. **Discovery metadata** — publish `/.well-known/oauth-authorization-server` (RFC 8414) advertising `urn:aid:agent-identity` in `grant_types_supported` and an `aid_grant` block with the endpoints above. Resource servers SHOULD also publish `/.well-known/oauth-protected-resource` (RFC 9728) so agents can discover the auth server from the API URL.
+8. **Introspection endpoint** — `POST /oauth/introspect` (RFC 7662) for real-time token validation
+9. **Lifecycle management** — suspend/reactivate endpoints for admin control
+10. **Registration response metadata** — return `token_endpoint` and `oidc_issuer` in registration/approval responses so agents can resolve these without guessing tenant paths
 
 **Target APIs** (the services your agents call) can:
 - **Minimal**: Validate RS256 JWTs using the auth server's JWKS endpoint (no AID-specific code)
 - **Full**: Also call the introspection endpoint for real-time suspension checking
+- **Discoverable**: Publish RFC 9728 Protected Resource Metadata so agents can find the auth server from the API URL alone
 
-See the [23blocks Authentication API](https://github.com/23blocks-org/gateway-api) for a reference implementation.
+### Standards referenced by AID
+
+| Standard | Role in AID |
+|---|---|
+| [RFC 6749](https://datatracker.ietf.org/doc/rfc6749/) | OAuth 2.0 framework — AID is a custom grant type |
+| [RFC 7515 / 7519](https://datatracker.ietf.org/doc/rfc7519/) | JWS / JWT — issued access tokens are RS256 JWTs |
+| [RFC 7662](https://datatracker.ietf.org/doc/rfc7662/) | Token Introspection — real-time validation and revocation |
+| [RFC 8414](https://datatracker.ietf.org/doc/rfc8414/) | Authorization Server Metadata — hosts the `aid_grant` block |
+| [RFC 8628](https://datatracker.ietf.org/doc/rfc8628/) | Device Authorization Grant — model for `user_code`, `expires_in`, `interval`, and polling error semantics |
+| [RFC 8693](https://datatracker.ietf.org/doc/rfc8693/) | Token Exchange — referenced for future delegation chains |
+| [RFC 9728](https://datatracker.ietf.org/doc/rfc9728/) | Protected Resource Metadata — resource-server discovery |
+
+See the [23blocks Authentication API](https://github.com/23blocks-org/auth-api) for a reference implementation.
 
 ## Interoperability with AMP
 
@@ -631,7 +749,7 @@ AID and [AMP](https://agentmessaging.org) (Agent Messaging Protocol) are indepen
 
 - [Agent Messaging Protocol (AMP)](https://github.com/agentmessaging/protocol) — messaging between AI agents
 - [AMP Claude Plugin](https://github.com/agentmessaging/claude-plugin) — AMP integration for Claude Code
-- [23blocks Authentication API](https://github.com/23blocks-org/gateway-api) — reference auth server with AID support
+- [23blocks Authentication API](https://github.com/23blocks-org/auth-api) — reference auth server with AID support
 
 ## License
 

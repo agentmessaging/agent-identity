@@ -29,6 +29,7 @@ source "${SCRIPT_DIR}/aid-helper.sh"
 # =============================================================================
 
 AUTH_URL=""
+RESOURCE_URL=""
 API_KEY=""
 SCOPE=""
 OUTPUT_FORMAT="text"
@@ -36,12 +37,13 @@ NO_CACHE=false
 QUIET=false
 
 show_help() {
-    echo "Usage: aid-token --auth <url> [options]"
+    echo "Usage: aid-token (--auth <url> | --resource <url>) [options]"
     echo ""
     echo "Request an API token from a 23blocks Auth server using Agent Identity."
     echo ""
-    echo "Required:"
+    echo "One of --auth or --resource is required:"
     echo "  --auth, -a URL          Auth server URL (e.g., https://auth.23blocks.com/acme)"
+    echo "  --resource, -r URL      Protected resource URL — auth server is discovered via RFC 9728"
     echo ""
     echo "Options:"
     echo "  --api-key, -k KEY       API key (X-Api-Key header)"
@@ -67,6 +69,10 @@ while [[ $# -gt 0 ]]; do
     case $1 in
         --auth|-a)
             AUTH_URL="$2"
+            shift 2
+            ;;
+        --resource|-r)
+            RESOURCE_URL="$2"
             shift 2
             ;;
         --api-key|-k)
@@ -101,10 +107,20 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-if [ -z "$AUTH_URL" ]; then
-    echo "Error: --auth is required" >&2
+if [ -z "$AUTH_URL" ] && [ -z "$RESOURCE_URL" ]; then
+    echo "Error: one of --auth or --resource is required" >&2
     echo "Run 'aid-token --help' for usage." >&2
     exit 1
+fi
+
+# Resolve --resource into AUTH_URL via RFC 9728 / RFC 8414 discovery
+if [ -z "$AUTH_URL" ]; then
+    AUTH_URL=$(discover_from_resource "$RESOURCE_URL" 2>/dev/null | jq -r '.auth_server // empty')
+    if [ -z "$AUTH_URL" ]; then
+        echo "Error: failed to discover an AID-enabled auth server from ${RESOURCE_URL}" >&2
+        echo "  Try 'aid-discover --resource ${RESOURCE_URL}' for details." >&2
+        exit 1
+    fi
 fi
 
 # =============================================================================

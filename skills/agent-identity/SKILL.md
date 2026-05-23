@@ -85,6 +85,28 @@ aid-init.sh --name my-agent --force  # Overwrite existing
 - `--name, -n` — Specify agent name
 - `--force, -f` — Overwrite existing identity
 
+### aid-discover.sh — Discover Auth Server from Resource URL
+
+Walks the RFC 9728 / RFC 8414 discovery chain. Given a protected resource URL, finds the AID-enabled auth server, validates that it advertises `urn:aid:agent-identity`, and emits the registration/token endpoints.
+
+```bash
+aid-discover.sh --resource https://api.acme.com               # Human-readable
+aid-discover.sh -r https://api.acme.com --json                # Full blob
+AUTH=$(aid-discover.sh -r https://api.acme.com --quiet)       # Just the auth URL
+```
+
+**Parameters:**
+- `--resource, -r` — Protected resource URL (required)
+- `--json, -j` — Output the full discovery blob as JSON
+- `--quiet, -q` — Output only the discovered auth server URL
+
+`aid-request.sh` and `aid-token.sh` also accept `--resource` directly:
+
+```bash
+aid-request.sh --resource https://api.acme.com
+TOKEN=$(aid-token.sh --resource https://api.acme.com --quiet)
+```
+
 ### aid-request.sh — Request Registration (Agent-Initiated)
 
 Request registration without an admin token. Creates a `pending` registration that an admin must approve.

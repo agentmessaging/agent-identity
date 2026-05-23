@@ -24,6 +24,7 @@ Index of features and bugs. Each entry links to a detail file under [`backlog/`]
 - **F004** — [Delegation chains for sub-agents](./backlog/F004-delegation-chains.md) — `Todo`
 - **F005** — [Cross-org federation](./backlog/F005-cross-org-federation.md) — `Todo`
 - **F006** — [Transaction tokens](./backlog/F006-transaction-tokens.md) — `Todo`
+- **F007** — [Opaque API key credential type](./backlog/F007-opaque-credential-types.md) — `Todo`
 
 ## Bugs
 

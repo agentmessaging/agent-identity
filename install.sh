@@ -89,6 +89,7 @@ echo "Installing AID scripts to ${INSTALL_DIR}..."
 SCRIPTS=(
     "aid-helper.sh"
     "aid-init.sh"
+    "aid-discover.sh"
     "aid-request.sh"
     "aid-register.sh"
     "aid-token.sh"

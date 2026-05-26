@@ -32,6 +32,7 @@ AUTH_URL=""
 RESOURCE_URL=""
 API_KEY=""
 SCOPE=""
+CREDENTIAL_TYPE=""
 OUTPUT_FORMAT="text"
 NO_CACHE=false
 QUIET=false
@@ -48,6 +49,7 @@ show_help() {
     echo "Options:"
     echo "  --api-key, -k KEY       API key (X-Api-Key header)"
     echo "  --scope, -s SCOPES      Space-separated scopes (default: all registered scopes)"
+    echo "  --credential-type, -c TYPE  Credential format: access_token (JWT, default) or api_key (opaque)"
     echo "  --json, -j              Output as JSON"
     echo "  --no-cache              Skip token cache, always request new token"
     echo "  --quiet, -q             Output only the access token (for piping)"
@@ -83,6 +85,10 @@ while [[ $# -gt 0 ]]; do
             SCOPE="$2"
             shift 2
             ;;
+        --credential-type|-c)
+            CREDENTIAL_TYPE="$2"
+            shift 2
+            ;;
         --json|-j)
             OUTPUT_FORMAT="json"
             shift
@@ -110,6 +116,12 @@ done
 if [ -z "$AUTH_URL" ] && [ -z "$RESOURCE_URL" ]; then
     echo "Error: one of --auth or --resource is required" >&2
     echo "Run 'aid-token --help' for usage." >&2
+    exit 1
+fi
+
+# Validate --credential-type value if provided
+if [ -n "$CREDENTIAL_TYPE" ] && [ "$CREDENTIAL_TYPE" != "access_token" ] && [ "$CREDENTIAL_TYPE" != "api_key" ]; then
+    echo "Error: --credential-type must be 'access_token' or 'api_key', got '${CREDENTIAL_TYPE}'" >&2
     exit 1
 fi
 
@@ -151,9 +163,11 @@ fi
 AID_CACHE_DIR="${AMP_DIR}/tokens"
 mkdir -p "$AID_CACHE_DIR"
 
-# Derive cache key from auth URL
+# Derive cache key from auth URL + credential_type (so api_key and access_token
+# requests for the same auth server don't collide on disk).
 cache_key_for_auth() {
-    echo "$AUTH_URL" | shasum -a 256 | cut -c1-16
+    local ct="${CREDENTIAL_TYPE:-access_token}"
+    echo "${AUTH_URL}|${ct}" | shasum -a 256 | cut -c1-16
 }
 
 check_cache() {
@@ -175,6 +189,14 @@ check_cache() {
             local cached_scope
             cached_scope=$(jq -r '.scope // ""' "$cache_file" 2>/dev/null)
             if [ "$cached_scope" != "$SCOPE" ]; then
+                return 1
+            fi
+        fi
+        # Check if credential_type matches (api_key tokens are never valid as access_token, vice versa)
+        if [ -n "$CREDENTIAL_TYPE" ]; then
+            local cached_ct
+            cached_ct=$(jq -r '.credential_type // "access_token"' "$cache_file" 2>/dev/null)
+            if [ "$cached_ct" != "$CREDENTIAL_TYPE" ]; then
                 return 1
             fi
         fi
@@ -219,11 +241,12 @@ if [ "$NO_CACHE" = false ]; then
                 echo "✅ Token (cached)"
                 echo ""
                 echo "  Auth:       ${AUTH_URL}"
+                echo "  Type:       $(echo "$cached_response" | jq -r '.credential_type // "access_token"')"
                 echo "  Scope:      $(echo "$cached_response" | jq -r '.scope // "all"')"
                 echo "  Expires in: $(echo "$cached_response" | jq -r '.expires_in // "?"')s"
                 echo "  Agent:      $(echo "$cached_response" | jq -r '.agent_address // "?"')"
                 echo ""
-                echo "  Access Token:"
+                echo "  Credential:"
                 echo "  $(echo "$cached_response" | jq -r '.access_token')"
                 ;;
         esac
@@ -331,6 +354,9 @@ FORM_DATA="grant_type=urn%3Aaid%3Aagent-identity&agent_identity=${AGENT_IDENTITY
 if [ -n "$SCOPE" ]; then
     ENCODED_SCOPE=$(echo -n "$SCOPE" | jq -sRr @uri)
     FORM_DATA="${FORM_DATA}&scope=${ENCODED_SCOPE}"
+fi
+if [ -n "$CREDENTIAL_TYPE" ]; then
+    FORM_DATA="${FORM_DATA}&requested_credential_type=${CREDENTIAL_TYPE}"
 fi
 
 # Make the request

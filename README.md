@@ -700,6 +700,25 @@ When an agent polls for registration status, the auth server MUST return one of 
 - **Local key storage** — private keys never leave the agent's machine
 - **Token cache security** — cached tokens stored with `600` permissions
 
+## Compliance — OWASP Top 10 for Agentic Applications (2026)
+
+AID is an identity-layer protocol. It directly addresses the OWASP risks that come from agents acting without scoped, attributable identity, and partially addresses risks where identity is a contributing control. Full details, including honest gaps and what to compose AID with for full coverage, are in [`docs/owasp-agentic-mapping.md`](./docs/owasp-agentic-mapping.md).
+
+| Code | Risk | AID coverage |
+|---|---|---|
+| ASI01 | Agent Goal Hijacking | Partial (attribution + revocation) |
+| ASI02 | Tool Misuse and Exploitation | **Full** (role-scoped JWTs + introspection) |
+| ASI03 | Identity and Privilege Abuse | **Full** (Ed25519 per-agent identity + PoP) |
+| ASI04 | Agentic Supply Chain Vulnerabilities | Partial (signed discovery + JWKS) |
+| ASI05 | Unexpected Code Execution | Out of scope (defer to sandboxing) |
+| ASI06 | Memory and Context Poisoning | Partial (tenant isolation via identity) |
+| ASI07 | Insecure Inter-Agent Communication | Partial → **Full with [AMP](https://agentmessaging.org)** |
+| ASI08 | Cascading Failures | Partial (sub-second kill switch via introspection) |
+| ASI09 | Human-Agent Trust Exploitation | Partial (source attribution via introspection) |
+| ASI10 | Rogue Agents | Partial (audit trail + revocation) |
+
+**Score: 2 Full · 7 Partial · 1 Out of scope.** AID is the identity layer of a complete agentic-AI security posture — compose with a runtime governance tool ([Microsoft Agent Governance Toolkit](https://github.com/microsoft/agent-governance-toolkit)), an inter-agent messaging protocol ([AMP](https://agentmessaging.org)), and a code-execution sandbox for full coverage.
+
 ## For Auth Server Implementers
 
 To support AID, your OAuth 2.0 server needs:

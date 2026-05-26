@@ -1,0 +1,50 @@
+name: support-bot
+version: 1.0.0
+description: Tier-1 support ticket triage agent with cryptographic identity (AID) for API auth.
+spec_version: "0.1.0"
+
+author: 23blocks
+license: MIT
+
+model:
+  preferred: claude-opus-4-7
+  fallback:
+    - claude-sonnet-4-6
+  constraints:
+    temperature: 0.2
+    max_tokens: 4096
+
+# ── AID identity & runtime authentication ───────────────────────────────────
+# Optional block proposed for OpenGAP. When the `opengap` CLI sees this block,
+# it can (a) verify the agent has an AID identity initialized via `aid-init`,
+# (b) run `aid-discover --resource <url>` for each resource server,
+# (c) acquire tokens via `aid-token` and inject them into tool calls.
+#
+# If the CLI doesn't know the `aid:` block (older versions / other frameworks),
+# the block is ignored — no breaking change.
+aid:
+  enabled: true
+  agent_address: support-bot@acme.local
+  key_algorithm: Ed25519
+  resource_servers:
+    - https://api.acme.com
+    - https://tickets.acme.com
+  # Optional per-resource scope narrowing (omitted = use all role scopes)
+  scopes:
+    https://api.acme.com:
+      - read:customers
+    https://tickets.acme.com:
+      - tickets:read
+      - tickets:write
+  # Optional: pin auth server explicitly to skip RFC 9728 discovery
+  # auth_server: https://auth.acme.com/acme
+
+runtime:
+  max_turns: 10
+  temperature: 0.2
+  timeout: 60
+
+tags:
+  - support
+  - tier1
+  - tickets

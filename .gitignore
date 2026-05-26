@@ -13,3 +13,6 @@ Thumbs.db
 *.pem
 *.key
 tokens/
+
+# Local research notes — kept out of the repo intentionally
+research/

@@ -24,7 +24,7 @@ Index of features and bugs. Each entry links to a detail file under [`backlog/`]
 - **F004** — [Delegation chains for sub-agents](./backlog/F004-delegation-chains.md) — `Todo`
 - **F005** — [Cross-org federation](./backlog/F005-cross-org-federation.md) — `Todo`
 - **F006** — [Transaction tokens](./backlog/F006-transaction-tokens.md) — `Todo`
-- **F007** — [Opaque API key credential type](./backlog/F007-opaque-credential-types.md) — `Todo`
+- **F007** — [Opaque API key credential type](./backlog/F007-opaque-credential-types.md) — `Spec+Client Done` · awaiting auth-api server impl
 - **F008** — [Propose AID as an auth.md assertion_type](./backlog/F008-auth-md-assertion-type.md) — `Todo` · *added 2026-05-26*
 - **F009** — [Map AID to OWASP Agentic Top 10](./backlog/F009-owasp-agentic-mapping.md) — `Todo` · *added 2026-05-26*
 - **F010** — [SPIFFE federation research](./backlog/F010-spiffe-federation-research.md) — `Todo` · *added 2026-05-26*

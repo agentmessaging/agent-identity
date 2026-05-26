@@ -395,9 +395,11 @@ aid-token --auth <url> [options]
 
 | Flag | Description |
 |------|-------------|
-| `--auth, -a` | Auth server URL (required) |
+| `--auth, -a` | Auth server URL (required, unless `--resource` is given) |
+| `--resource, -r` | Protected resource URL — auth server is discovered via RFC 9728 |
 | `--api-key, -k` | API key (X-Api-Key header) |
 | `--scope, -s` | Space-separated scopes (default: all registered) |
+| `--credential-type, -c` | `access_token` (JWT, default) or `api_key` (opaque) |
 | `--json, -j` | Output as JSON |
 | `--quiet, -q` | Output only the token (for piping) |
 | `--no-cache` | Skip token cache, always request fresh |
@@ -448,9 +450,32 @@ grant_type=urn%3Aaid%3Aagent-identity
 &agent_identity=<base64url-encoded-signed-agent-identity>
 &proof=<base64url-encoded-proof-of-possession>
 &scope=files%3Aread+files%3Awrite
+&requested_credential_type=access_token
 ```
 
 The `token_endpoint` is resolved from the registration file (returned by the auth server during registration/approval). Falls back to `{auth_url}/oauth/token`.
+
+### Credential format (`requested_credential_type`)
+
+The optional `requested_credential_type` parameter tells the auth server which credential format to issue. Values:
+
+| Value | Description |
+|---|---|
+| `access_token` (default) | RS256 JWT. Target APIs validate offline via JWKS. |
+| `api_key` | Opaque bearer token. Target APIs validate online via RFC 7662 introspection. Useful for services without JWKS infrastructure. |
+
+When omitted, the server returns `access_token`. The response always includes a `credential_type` field indicating what was issued. The value (JWT or opaque key) is in the standard `access_token` response field regardless of type.
+
+**Discovery**: auth servers advertise which formats they support via `aid_grant.credential_types_supported` in the authorization-server metadata. Clients SHOULD reject configurations where the requested type isn't advertised.
+
+**Client usage:**
+```bash
+# Default — get a JWT
+aid-token --auth https://auth.example.com/tenant
+
+# Get an opaque API key instead
+aid-token --auth https://auth.example.com/tenant --credential-type api_key
+```
 
 **Agent Identity** (canonical JSON — sorted keys, compact, no whitespace — then base64url-encoded):
 ```json
@@ -541,7 +566,7 @@ GET https://auth.acme.com/zoom/.well-known/oauth-authorization-server
     "code_resolution_endpoint": "https://auth.acme.com/zoom/agent_registrations/resolve",
     "agent_authorization_uri": "https://app.acme.com/agents/authorize",
     "key_algorithms_supported": ["Ed25519"],
-    "credential_types_supported": ["access_token"],
+    "credential_types_supported": ["access_token", "api_key"],
     "polling_interval": 5
   }
 }
@@ -557,7 +582,7 @@ GET https://auth.acme.com/zoom/.well-known/oauth-authorization-server
 | `code_resolution_endpoint` | SHOULD | URL the admin UI uses to resolve an authorization `code` into a registration |
 | `agent_authorization_uri` | SHOULD | Base URL for the admin approval page (the `verification_uri` from RFC 8628) |
 | `key_algorithms_supported` | MUST | Array of Ed25519 (and future algorithms); clients MUST reject if their key algorithm is absent |
-| `credential_types_supported` | MAY | Array of credential formats issued (currently always `["access_token"]`; reserved for future opaque API key support) |
+| `credential_types_supported` | MAY | Array of credential formats issued. Values: `access_token` (RS256 JWT, default) and/or `api_key` (opaque bearer). Clients SHOULD reject configurations where their requested type isn't listed. |
 | `polling_interval` | MAY | Default `interval` returned in agent-initiated registration responses; clients SHOULD treat per-registration `interval` as authoritative |
 
 ### Step 3 — Use the discovered endpoints

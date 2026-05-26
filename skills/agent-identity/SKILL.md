@@ -169,9 +169,11 @@ aid-token.sh --auth https://auth.23blocks.com/acme --scope "files:read files:wri
 ```
 
 **Parameters:**
-- `--auth, -a` — Auth server URL (required)
+- `--auth, -a` — Auth server URL (required, unless `--resource` given)
+- `--resource, -r` — Protected resource URL — auth server is discovered via RFC 9728
 - `--api-key, -k` — API key (X-Api-Key header)
 - `--scope, -s` — Space-separated scopes (optional)
+- `--credential-type, -c` — `access_token` (JWT, default) or `api_key` (opaque)
 - `--json, -j` — Output as JSON
 - `--quiet, -q` — Output only the token string
 - `--no-cache` — Skip token cache

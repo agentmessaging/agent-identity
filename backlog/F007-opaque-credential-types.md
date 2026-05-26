@@ -1,6 +1,6 @@
 # F007 — Opaque API key credential type
 
-**Status:** Todo
+**Status:** Spec + client shipped (2026-05-26); awaiting auth-api server implementation
 **Type:** Feature
 **Created:** 2026-05-22
 

@@ -776,7 +776,7 @@ To support AID, your OAuth 2.0 server needs:
 | [RFC 8693](https://datatracker.ietf.org/doc/rfc8693/) | Token Exchange — referenced for future delegation chains |
 | [RFC 9728](https://datatracker.ietf.org/doc/rfc9728/) | Protected Resource Metadata — resource-server discovery |
 
-See the [23blocks Authentication API](https://github.com/23blocks-org/auth-api) for a reference implementation.
+See the [23blocks Authentication API](https://github.com/23blocks/blocks-auth-api) for a reference implementation.
 
 ## Interoperability with AMP
 
@@ -793,7 +793,7 @@ AID and [AMP](https://agentmessaging.org) (Agent Messaging Protocol) are indepen
 
 - [Agent Messaging Protocol (AMP)](https://github.com/agentmessaging/protocol) — messaging between AI agents
 - [AMP Claude Plugin](https://github.com/agentmessaging/claude-plugin) — AMP integration for Claude Code
-- [23blocks Authentication API](https://github.com/23blocks-org/auth-api) — reference auth server with AID support
+- [23blocks Authentication API](https://github.com/23blocks/blocks-auth-api) — reference auth server with AID support
 
 ## License
 

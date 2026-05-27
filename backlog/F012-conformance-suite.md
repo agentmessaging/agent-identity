@@ -124,5 +124,5 @@ For F001 (IETF Internet-Draft) to credibly progress to WG-adoption, having a con
 
 - [Microsoft Agent Governance Toolkit conformance tests](https://github.com/microsoft/agent-governance-toolkit) — 992 tests, 10 specs
 - AID spec: [`agent-identity/README.md`](../README.md)
-- Reference impl: [`23blocks-org/auth-api`](https://github.com/23blocks-org/auth-api)
+- Reference impl: [`23blocks/blocks-auth-api`](https://github.com/23blocks/blocks-auth-api)
 - Internal research: [`research/microsoft-agent-governance.md`](../research/microsoft-agent-governance.md)

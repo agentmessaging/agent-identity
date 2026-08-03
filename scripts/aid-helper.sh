@@ -317,6 +317,46 @@ generate_keypair() {
 }
 
 # =============================================================================
+# derive_did_key — Compute the did:key identifier for an Ed25519 public key
+# =============================================================================
+#
+# The agent's canonical, self-certifying identifier (F015). did:key binds the
+# identifier to the key itself, so the id can never drift from the key material
+# (the failure class behind the AI Maestro identity contamination). Format:
+#   did:key:z<base58btc( multicodec(0xed01) || raw-32-byte-ed25519-pubkey )>
+# Ref: https://w3c-ccg.github.io/did-method-key/ (Ed25519 multicodec 0xed).
+#
+# Usage: derive_did_key [public.pem]   (defaults to the agent's public key)
+# Requires: openssl, python3 (for base58btc).
+#
+derive_did_key() {
+    require_openssl
+    local public_key="${1:-${AMP_KEYS_DIR}/public.pem}"
+    if [ ! -f "${public_key}" ]; then
+        echo "Error: public key not found: ${public_key}" >&2
+        return 1
+    fi
+    python3 - "${public_key}" <<'PYEOF'
+import subprocess, sys
+der = subprocess.run(
+    ["openssl", "pkey", "-pubin", "-in", sys.argv[1], "-outform", "DER"],
+    capture_output=True).stdout
+if len(der) < 32:
+    sys.stderr.write("Error: could not read Ed25519 public key\n"); sys.exit(1)
+raw = der[-32:]                       # last 32 bytes = raw Ed25519 public key
+mc = b"\xed\x01" + raw                # multicodec prefix for ed25519-pub
+alpha = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+n = int.from_bytes(mc, "big"); s = ""
+while n > 0:
+    n, r = divmod(n, 58); s = alpha[r] + s
+for b in mc:                          # preserve leading zero bytes as '1'
+    if b == 0: s = "1" + s
+    else: break
+print("did:key:z" + s)
+PYEOF
+}
+
+# =============================================================================
 # Discovery — Fetch and validate OAuth metadata documents
 # =============================================================================
 #

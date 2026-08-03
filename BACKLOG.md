@@ -31,7 +31,8 @@ Index of features and bugs. Each entry links to a detail file under [`backlog/`]
 - **F011** — [Add `aid:` block to OpenGAP agent.yaml](./backlog/F011-opengap-aid-block.md) — `Issue Filed` · [open-gitagent/opengap#87](https://github.com/open-gitagent/opengap/issues/87)
 - **F012** — [AID conformance suite v1](./backlog/F012-conformance-suite.md) — `v0.1 Shipped` · [agentmessaging/aid-conformance](https://github.com/agentmessaging/aid-conformance)
 - **F013** — [Microsoft AGENTMESH bridge via Ed25519/DID](./backlog/F013-agentmesh-did-bridge.md) — `Todo` · *added 2026-05-27 after F010 research pivot*
-- **F014** — [DPoP-align proof-of-possession (RFC 9449) / sender-constrained tokens](./backlog/F014-dpop-sender-constrained-tokens.md) — `Todo` · *added 2026-07-02*
+- **F014** — [DPoP-align proof-of-possession (RFC 9449) / sender-constrained tokens](./backlog/F014-dpop-sender-constrained-tokens.md) — `Todo` · **promoted to CORE by F015** · *added 2026-07-02*
+- **F015** — [Identity anchor (key-derived DID) + pluggable attestation seam](./backlog/F015-identity-anchor-and-pluggable-seam.md) — `In Progress` · *foundational; re-scopes F004/F005/F014 · added 2026-08-02*
 
 ## Roadmap clusters
 

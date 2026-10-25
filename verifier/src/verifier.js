@@ -28,8 +28,8 @@ import { RevocationList } from './revocation.js'
  *   has told Acme since;  7. introspection, as often as the policy says;  8. permissions, mapped and capped.
  * Every refusal is an AidError with a code, and `onDecision` hears every outcome (never the token).
  */
-export function createVerifier(rawConfig, { fetch: fetchImpl = globalThis.fetch, now = () => Date.now(), onDecision, jwks, revocations, allowInsecureHttp = false } = {}) {
-  const config = normalizeConfig(rawConfig)
+export function createVerifier(rawConfig, { fetch: fetchImpl = globalThis.fetch, now = () => Date.now(), onDecision, jwks, revocations, allowInsecureHttp = false, strictAudience = false } = {}) {
+  const config = normalizeConfig(rawConfig, { strictAudience })
   const keys = jwks ?? new JwksCache({ fetch: fetchImpl, now, allowInsecureHttp })
   const revoked = revocations ?? new RevocationList({ now })
 
@@ -95,15 +95,14 @@ export function createVerifier(rawConfig, { fetch: fetchImpl = globalThis.fetch,
       role = typeof answer.agent_role === 'string' ? answer.agent_role : undefined
     }
 
-    const missing = requiredPermissions.filter(p => !permissions.includes(p))
-    if (missing.length > 0) throw new AidError('insufficient_permissions', `The agent may not do: ${missing.join(', ')}`)
-
     /** @type {Principal} */
     const principal = {
       issuer: issuer.issuer, kind: issuer.kind, agentId, address, name: typeof payload.agent_name === 'string' ? payload.agent_name : undefined,
       jti: typeof payload.jti === 'string' ? payload.jti : '', issuerScopes, permissions, role,
       grant: grant ? { sponsor: grant.sponsor, expiresAt: grant.expiresAt, note: grant.note } : null, expiresAt: payload.exp,
     }
+    const missing = requiredPermissions.filter(p => !permissions.includes(p))
+    if (missing.length > 0) throw new AidError('insufficient_permissions', `The agent may not do: ${missing.join(', ')}`, { principal })
     return principal
   }
 
@@ -114,7 +113,7 @@ export function createVerifier(rawConfig, { fetch: fetchImpl = globalThis.fetch,
     /**
      * @param {string} token
      * @param {{ permissions?: string[] }} [opts] what this request needs; the agent must hold all of them here
-     * @returns {Promise<{ ok: true, principal: Principal } | { ok: false, code: string, message: string }>}
+     * @returns {Promise<{ ok: true, principal: Principal } | { ok: false, code: string, message: string, principal?: Principal }>} `principal` is present on `insufficient_permissions`: the agent is known, it was just not allowed this
      */
     async verify(token, { permissions = [] } = {}) {
       try {
@@ -123,8 +122,8 @@ export function createVerifier(rawConfig, { fetch: fetchImpl = globalThis.fetch,
         return { ok: true, principal }
       } catch (e) {
         const err = e instanceof AidError ? e : new AidError('internal_error', 'The token could not be checked')
-        onDecision?.({ ok: false, code: err.code, message: err.message })
-        return { ok: false, code: err.code, message: err.message }
+        onDecision?.({ ok: false, code: err.code, message: err.message, ...(err.principal ? { issuer: err.principal.issuer, agentId: err.principal.agentId, jti: err.principal.jti } : {}) })
+        return err.principal ? { ok: false, code: err.code, message: err.message, principal: err.principal } : { ok: false, code: err.code, message: err.message }
       }
     },
   }

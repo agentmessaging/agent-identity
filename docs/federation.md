@@ -34,6 +34,8 @@ Three kinds, by what the system can do today. Check a system's documentation for
 | The system itself | unchanged | unchanged (agents reach it through the gateway) | has to change |
 | Who enforces permissions | the system, on Lola's user | the system, on Lola's user (and the gateway may narrow it) | n/a |
 
+In kind B the relying party **binds each agent to a user of the old system**, and the binding includes the issuer: the same agent address at two issuers is two different agents. An agent with no binding is refused, however good its token. The gateway keeps that binding (agent, issuer) to the credential of that user; the old system never learns that a token was involved.
+
 Two things that are *not* enough: a system that only offers **single sign-on in a browser** (SAML or OIDC login pages) does not, by that, accept a token on its API; and a system that checks tokens only from **its own** login server cannot trust this issuer until it can be pointed at another one.
 
 What the issuer must provide for the A kind to work with systems that follow the standards is listed in [§7](#7-what-an-issuer-must-add): above all a token meant for that system (`aud`), a stable identifier to map, and short lifetimes.
@@ -105,8 +107,13 @@ The result is a **principal**: issuer, kind, agent id, address, name, the permis
 
 A token is a bearer credential and an offline signature check cannot see that an agent was suspended after the token was issued. Three layers, in order of strength:
 
-- **Introspection** (RFC 7662) before the request is served: exact, one round trip. The verifier MUST authenticate to the endpoint (a client id and secret, or a bearer token): an open introspection endpoint answers "is this stolen token still good?" for anyone.
-- **Status events** pushed by the issuer: `agent-suspended`, `agent-deleted`, `agent-reactivated`, `token-revoked`, each with the issuer and the agent id or `jti`. The reference verifier keeps them in memory (`RevocationList.apply`); a restart forgets them, which is why introspection or short tokens stay the source of truth. The event shape is a deliberate subset, to be aligned with the OpenID Shared Signals Framework / CAEP, which has no agent profile yet.
+- **Introspection** (RFC 7662) before the request is served: exact, one round trip. The verifier MUST authenticate to the endpoint (a client id and secret, or a bearer token): an open introspection endpoint answers "is this stolen token still good?" for anyone. The credential SHOULD be issued for that relying party alone and be able to introspect only tokens meant for it, because it is a bearer secret the relying party holds.
+- **Status events** pushed by the issuer. The shape below is a **draft**, a deliberate subset to be aligned with the OpenID Shared Signals Framework / CAEP, which has no agent profile yet:
+  - *Delivery:* the issuer POSTs a signed JWT (a Security Event Token, RFC 8417 in shape) to the receiver URL the relying party registered (https only).
+  - *Claims:* `iss` (the issuer), `aud` (the relying party's own audience), `iat`, `jti`, and `events`: an object whose key is the event type and whose value has a `subject` with the agent's `agent_id` and `agent_address`. Types: `urn:aid:event:agent-suspended`, `urn:aid:event:agent-deleted`, `urn:aid:event:agent-reactivated`, `urn:aid:event:agent-role-changed`, and `urn:aid:event:token-revoked` (subject is the token's `jti`).
+  - *The receiver MUST:* verify the signature against the issuer's JWKS (the same configured key set as for tokens), check `iss` and `aud`, refuse an `iat` more than five minutes old or in the future beyond the clock skew, refuse a `jti` it has already seen, and apply events idempotently. An event it does not understand is ignored, not an error. A **reactivation** is only as trustworthy as its signature, which is why it is checked like everything else.
+  - *The issuer MUST:* retry with backoff, never block the administrator's action on delivery, and never put secrets in an event.
+  The reference verifier keeps what it learns in memory (`RevocationList.apply`); a restart forgets it, which is why introspection or short tokens stay the source of truth. The hosted gateway (`gateway/`) persists them.
 - **Short lifetimes**: the fallback when events are lost. Recommended: 15 minutes or less for external agents, an hour for own agents, with refresh by a new token exchange.
 
 The RP's own kill switches need no issuer: remove an issuer from the configuration and everything it issued stops at step 3; delete a grant and that agent stops at step 8.

@@ -276,7 +276,29 @@ describe('is the agent still active?', () => {
   })
 })
 
+describe('what a caller needs to audit', () => {
+  test('a refusal for missing permissions still says who the agent is', async () => {
+    const { acme, v, decisions } = setup()
+    const r = await v.verify(acme.sign(agentPayload(ACME, { scopes: ['files:read'] })), { permissions: ['tickets.write'] })
+    assert.equal(r.code, 'insufficient_permissions')
+    assert.equal(r.principal.agentId, 'ag-1')
+    assert.deepEqual(r.principal.permissions, ['docs.read'])
+    assert.equal(decisions.at(-1).agentId, 'ag-1')
+  })
+  test('a token that fails earlier carries no principal', async () => {
+    const { v } = setup()
+    const r = await v.verify('garbage')
+    assert.equal(r.principal, undefined)
+  })
+})
+
 describe('configuration', () => {
+  test('strictAudience refuses a generic audience instead of only warning', () => {
+    const cfg = { issuers: [{ issuer: ACME, jwksUri: `${ACME}/jwks`, kind: 'own', audience: ['client_app', 'api_service'], allowAllActiveAgents: true }] }
+    assert.doesNotThrow(() => createVerifier(cfg))
+    assert.throws(() => createVerifier(cfg, { strictAudience: true }), /strictAudience/)
+  })
+
   test('refuses an issuer with no audience, a grant with no sponsor, and "allow all" on an external issuer', () => {
     const base = { issuer: ACME, jwksUri: `${ACME}/jwks`, kind: 'own' }
     assert.throws(() => createVerifier({ issuers: [base] }), /audience/)

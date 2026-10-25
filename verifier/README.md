@@ -36,3 +36,10 @@ cd verifier && npm test
 ```
 
 The tests generate their own RSA keys and a pretend issuer; nothing leaves the machine.
+
+## Options worth knowing
+
+- `strictAudience: true` refuses (instead of warning about) an audience that is the same for every tenant of the provider.
+- `fetch`: your own function, for example one that refuses private addresses. It must behave like the standard one for what the verifier uses: return an object with `ok`, `status` and `json()` (and, for introspection, accept `method`, `headers` and a `URLSearchParams` `body`). Pass the same function to key fetching and introspection.
+- A refusal for missing permissions (`insufficient_permissions`) also carries the `principal`, so a caller can record that the agent was identified and refused.
+- The pieces a gateway needs are exported: `decodeJwt`, `assertAlgorithm`, `verifySignature`.

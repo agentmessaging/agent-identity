@@ -41,7 +41,7 @@ const INTROSPECT_MODES = new Set(['always', 'never', 'for-permissions'])
  * @property {string} [note]
  */
 
-export function normalizeConfig(raw) {
+export function normalizeConfig(raw, { strictAudience = false } = {}) {
   const warnings = []
   if (!raw || typeof raw !== 'object') throw new TypeError('config must be an object')
   const issuers = new Map()
@@ -53,6 +53,7 @@ export function normalizeConfig(raw) {
       throw new TypeError(`issuer ${i.issuer} needs a non-empty "audience": without one, a token meant for another service would be accepted here`)
     }
     if (i.audience.every(a => GENERIC_AUDIENCES.has(a))) {
+      if (strictAudience) throw new TypeError(`issuer ${i.issuer}: audience ${JSON.stringify(i.audience)} is shared by every tenant of the provider and says nothing about this service (strictAudience refuses it)`)
       warnings.push(`issuer ${i.issuer}: audience ${JSON.stringify(i.audience)} is shared by every tenant of the provider and says nothing about Acme; use a value specific to Acme`)
     }
     if (i.allowAllActiveAgents && i.kind !== 'own') throw new TypeError(`issuer ${i.issuer}: allowAllActiveAgents is for an "own" issuer only`)

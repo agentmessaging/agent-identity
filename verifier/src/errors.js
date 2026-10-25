@@ -1,10 +1,12 @@
 /** A refusal, with a code that is safe to log and a message for the operator. Never carries the token. */
 export class AidError extends Error {
   /** @param {string} code @param {string} message */
-  constructor(code, message) {
+  constructor(code, message, extra = {}) {
     super(message)
     this.name = 'AidError'
     this.code = code
+    /** For a refusal after the agent was identified (insufficient_permissions): who it is, so the caller can audit "X was refused Y" */
+    this.principal = extra.principal
   }
 }
 

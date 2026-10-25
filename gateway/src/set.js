@@ -49,14 +49,19 @@ export async function verifySecurityEvent(jwt, { issuers, jwks, audience, maxAge
   const out = []
   for (const [uri, body] of Object.entries(events)) {
     const type = EVENT_TYPES[uri]
-    if (!type) throw new SetError('invalid_request', 'an event type is not supported')
+    // An event type this receiver does not act on (a newer one, or `urn:aid:event:agent-role-changed`) is ignored, not an
+    // error: the token is signed by a trusted issuer and the profile says unknown events are skipped. It is never applied.
+    if (!type) continue
     if (!body || typeof body !== 'object') throw new SetError('invalid_request', 'an event has no subject')
+    // The profile puts who it is about under `subject`; a flat `agent_id` is still read, for older senders
+    const subject = body.subject && typeof body.subject === 'object' && !Array.isArray(body.subject) ? body.subject : body
     if (type === 'token-revoked') {
-      if (typeof body.jti !== 'string' || !body.jti) throw new SetError('invalid_request', 'token-revoked needs a jti')
-      out.push({ issuer: issuer.issuer, type, jti: body.jti })
+      const jti = typeof subject.jti === 'string' && subject.jti ? subject.jti : (typeof body.jti === 'string' ? body.jti : '')
+      if (!jti) throw new SetError('invalid_request', 'token-revoked needs a jti')
+      out.push({ issuer: issuer.issuer, type, jti })
     } else {
-      if (typeof body.agent_id !== 'string' || !body.agent_id) throw new SetError('invalid_request', `${type} needs an agent_id`)
-      out.push({ issuer: issuer.issuer, type, agentId: body.agent_id })
+      if (typeof subject.agent_id !== 'string' || !subject.agent_id) throw new SetError('invalid_request', `${type} needs an agent_id`)
+      out.push({ issuer: issuer.issuer, type, agentId: subject.agent_id })
     }
   }
 

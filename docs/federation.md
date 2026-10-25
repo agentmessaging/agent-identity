@@ -131,6 +131,8 @@ Checked against the 23blocks gateway (`lib/json_token.rb`, `oidc_controller.rb`,
 | R5 | Key rotation: publish the new key beside the old one for the transition | the JWKS publishes one key; rotation is not specified | The verifier refreshes on an unknown `kid`, but an issuer that swaps keys with no overlap breaks tokens in flight |
 | R6 | `agent_role` and the person who registered the agent (its sponsor) in the introspection answer | the role is in the introspection answer; the registering user is stored (`registered_by_user_id`) but not exposed | Lets Acme map and audit without a second call |
 
+The client side of R1 is `aid-token --audience <service>` (it sends `resource`; the token's `aud` is then exactly that service, and the token cache is kept per audience so a token for one service is never reused for another). `--resource` keeps its old meaning, discovery of the auth server.
+
 ## 8. Security considerations
 
 - **Token passthrough and confused deputy.** Acme MUST NOT accept a token that was not issued for it: that is what the audience check is (R1).

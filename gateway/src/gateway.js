@@ -147,9 +147,9 @@ export function createGateway({ dataDir, vault, adminToken, tenantStore, now = (
       appendFileSync(revocationFile, `${JSON.stringify({ tenant, at: new Date(now()).toISOString(), event })}\n`, { mode: 0o600 })
     }
     try { chmodSync(revocationFile, 0o600) } catch { /* best effort */ }
-    ctx.reason = `event:${events.map(e => e.type).join('+')}`
+    ctx.reason = `event:${events.map(e => e.type).join('+') || 'ignored'}`
     ctx.decision = 'allow'
-    ctx.issuer = events[0].issuer
+    ctx.issuer = events[0]?.issuer ?? null
     sendJson(res, 202, { accepted: events.length })
   }
 

@@ -64,8 +64,6 @@ test('a bad event is refused and changes nothing: signature, audience, issuer, a
       'no jti': t.issuer.signRaw(claims(t, { jti: undefined })),
       'no events': t.issuer.signRaw(claims(t, { events: undefined })),
       'empty events': t.issuer.signRaw(claims(t, { events: {} })),
-      'unknown event type': t.issuer.signRaw(claims(t, { events: { 'urn:aid:event:make-admin': { agent_id: t.lolaRec.id } } })),
-      'one good one bad': t.issuer.signRaw(claims(t, { events: { 'urn:aid:event:agent-suspended': { agent_id: t.lolaRec.id }, 'urn:evil': {} } })),
       'no subject': t.issuer.signRaw(claims(t, { events: { 'urn:aid:event:agent-suspended': {} } })),
       'alg none': `${b64({ alg: 'none' })}.${b64(claims(t))}.`,
       'alg HS256': `${b64({ alg: 'HS256', kid: 'demo-1' })}.${b64(claims(t))}.${Buffer.from('x').toString('base64url')}`,
@@ -84,6 +82,36 @@ test('a bad event is refused and changes nothing: signature, audience, issuer, a
     const replay = await post(t, good)
     assert.equal(replay.status, 400)
     assert.match(replay.json.description, /already received/)
+  } finally { await t.stop() }
+})
+
+test('what the real issuer sends: the subject is nested, an event the gateway does not act on is ignored, not an error', async () => {
+  const t = await setup({ introspect: 'never' })
+  try {
+    const token = await t.tokenFor(t.lola)
+    assert.equal((await t.call('/acme/contacts', { token })).status, 200)
+
+    // an event type this receiver does not act on, even a made-up one, is skipped: accepted, applied to nothing
+    const ignored = await post(t, t.issuer.signRaw(claims(t, { events: { 'urn:aid:event:agent-role-changed': { subject: { agent_id: t.lolaRec.id }, agent_role: 'viewer' }, 'urn:aid:event:make-admin': { subject: { agent_id: t.lolaRec.id } } } })))
+    assert.equal(ignored.status, 202)
+    assert.equal(ignored.json.accepted, 0)
+    assert.equal((await t.call('/acme/contacts', { token })).status, 200, 'ignored events changed nothing')
+
+    // known and unknown together: the known one is applied, the unknown one skipped
+    const mixed = await post(t, t.issuer.signRaw(claims(t, { events: { 'urn:evil': {}, 'urn:aid:event:agent-suspended': { subject: { agent_id: t.lolaRec.id, agent_address: 'lola@acme.example' }, agent_status: 'suspended' } } })))
+    assert.equal(mixed.status, 202)
+    assert.equal(mixed.json.accepted, 1)
+    assert.equal((await t.call('/acme/contacts', { token })).status, 401, 'the suspension in the nested subject took effect')
+  } finally { await t.stop() }
+})
+
+test('a known event with no subject is still refused', async () => {
+  const t = await setup({ introspect: 'never' })
+  try {
+    for (const events of [{ 'urn:aid:event:agent-suspended': {} }, { 'urn:aid:event:agent-suspended': { subject: {} } }, { 'urn:aid:event:token-revoked': { subject: {} } }]) {
+      const r = await post(t, t.issuer.signRaw(claims(t, { events })))
+      assert.equal(r.status, 400, JSON.stringify(events))
+    }
   } finally { await t.stop() }
 })
 

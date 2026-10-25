@@ -1,0 +1,13 @@
+{
+  "name": "@agentmessaging/aid-gateway",
+  "version": "0.1.0",
+  "description": "Reference hosted gateway for the Agent Identity (AID) protocol, kind B: puts an AID token in front of an old system that has its own credentials and cannot check an outside token. Zero dependencies, no build.",
+  "type": "module",
+  "main": "src/index.js",
+  "bin": { "aid-gateway": "bin/aid-gateway.js" },
+  "exports": { ".": "./src/index.js" },
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test \"test/*.test.js\"" },
+  "license": "MIT",
+  "private": true
+}

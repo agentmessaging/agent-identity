@@ -10,7 +10,7 @@ A pure-Bash reference client for the **Agent Identity (AID) protocol** — OAuth
 2. **Claude Code plugin** — see `.claude-plugin/plugin.json` and the `agent-identity` skill at `skills/agent-identity/SKILL.md`.
 3. **Remote `curl | bash`** — `install.sh` falls back to downloading scripts from `raw.githubusercontent.com/agentmessaging/agent-identity/main/scripts/` when its sibling `scripts/` dir is absent.
 
-There is no compiled artifact, no package manager, no test suite, no linter. Edits to `scripts/*.sh` are the deliverable.
+There is no compiled artifact, no package manager, no test suite, no linter for the CLI: edits to `scripts/*.sh` are the deliverable. The one exception is `verifier/`, a separate zero-dependency Node package (the relying-party side of [`docs/federation.md`](docs/federation.md)): `cd verifier && npm test` (Node 20+, no install step).
 
 ## Common commands
 

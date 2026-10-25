@@ -1,0 +1,12 @@
+{
+  "name": "@agentmessaging/aid-verifier",
+  "version": "0.1.0",
+  "description": "Reference relying-party verifier for the Agent Identity (AID) protocol: a company checks an agent's token against the issuers it trusts, and decides what the agent may do. Zero dependencies, no build.",
+  "type": "module",
+  "main": "src/index.js",
+  "exports": { ".": "./src/index.js" },
+  "engines": { "node": ">=20" },
+  "scripts": { "test": "node --test \"test/*.test.js\"" },
+  "license": "MIT",
+  "private": true
+}

@@ -6,7 +6,7 @@ How a company that does not run its own agent identity server can still know, ch
 
 ## 1. The idea
 
-Acme does not build an agent table, registration flow or token server. It trusts an AID **issuer** (for example 23blocks) to do that: Acme's agents are registered at the issuer, and the issuer authenticates them. Acme runs a small **verifier** on its own APIs. For each request the verifier answers one question: *may the bearer of this token work here, and as whom?*
+Acme does not build an agent table, registration flow or token server. It trusts an AID **issuer** (for example 23blocks) to do that: Acme's agents are registered at the issuer, and the issuer authenticates them. Acme either configures its system to trust the issuer (kind A below), or runs a small **verifier** in front of it (kind B, the part of this repo in `verifier/`). For each request the question is: *may the bearer of this token work here, and as whom?*
 
 Two things stay with Acme and never move to the issuer:
 
@@ -14,6 +14,29 @@ Two things stay with Acme and never move to the issuer:
 2. **What it may do here.** The issuer says what the agent may *claim*. Acme maps that to its own permissions and can only narrow it.
 
 This is deliberately not a permission sync. Two copies of "who may do what" drift; here the issuer's scopes are an *input* to Acme's decision, read on every request.
+
+## What this is, and what it is not
+
+**An agent is an identity in your system, like a person, but not a person.** Acme creates a user for the agent in the system it already runs (a CRM, an ERP, a point-of-sale, anything with users): "Lola", with the permissions Lola should have, enforced by that system's own permission model. Lola then gets a token from the issuer and presents it. The system sees "Lola", not a shared account and not a human's password: its own audit log says what Lola did. Nobody shares an account with an agent, and no permissions are copied between systems, because they live on Lola's user in the system itself.
+
+The issuer only answers *is this really Lola?* Everything about what Lola may do stays in Acme's system.
+
+**This works only with systems that can take part.** It does not make an old system modern. A system either supports what is listed under [Which systems this works with](#which-systems-this-works-with), or something small has to sit in front of it, or it has to change. Older systems that support none of it are not covered by this version, and the profile does not pretend otherwise.
+
+## Which systems this works with
+
+Three kinds, by what the system can do today. Check a system's documentation for the words in the first row.
+
+| | **A. Takes the token itself** | **B. Needs something in front** | **C. Not covered yet** |
+|---|---|---|---|
+| The system can | Accept an **OAuth 2.0 / OpenID Connect access token from an outside identity provider** on its API, and check it: a **signed JWT** (RS256) checked against the provider's published keys (**JWKS**), with `iss`, `aud` and `exp`; and **map a claim in the token to one of its own users** | Call its API with something of its own (an API key, basic auth, its own OAuth client) but **cannot check an outside token** | Neither: no API, a screen-and-password login only, or only old protocols (SOAP with its own security, EDI, file drops) |
+| What Acme does | Registers the issuer as a trusted identity provider **in the system** (configuration), creates the user "Lola", and maps the token's identifier to that user | Creates the user "Lola" and gives the **verifier** (in Acme's own API gateway or reverse proxy) or the **23blocks gateway** the credential that user uses; the gateway checks the agent's token and acts as Lola | Changes or replaces something: add an API, add token validation, or put a connector in front. **This version has no answer for it** |
+| The system itself | unchanged | unchanged (agents reach it through the gateway) | has to change |
+| Who enforces permissions | the system, on Lola's user | the system, on Lola's user (and the gateway may narrow it) | n/a |
+
+Two things that are *not* enough: a system that only offers **single sign-on in a browser** (SAML or OIDC login pages) does not, by that, accept a token on its API; and a system that checks tokens only from **its own** login server cannot trust this issuer until it can be pointed at another one.
+
+What the issuer must provide for the A kind to work with systems that follow the standards is listed in [§7](#7-what-an-issuer-must-add): above all a token meant for that system (`aud`), a stable identifier to map, and short lifetimes.
 
 ## 2. Roles
 

@@ -36,3 +36,7 @@ The need that matters first is not agent-to-server federation but a **company th
 ### Issuer work this needs (the 23blocks gateway, tracked in its own repo)
 
 R1 an audience specific to the service (RFC 8707 `resource`); R2 a `scope` string claim; R3 introspection that authenticates its caller; R4 status events to registered relying parties; R5 key rotation with an overlap; R6 the agent's role and the person who registered it in the introspection answer. Details and the current state of each are in [`docs/federation.md` §7](../docs/federation.md#7-what-an-issuer-must-add).
+
+### Update 2026-10-24 (later): the agent is a user in the system, and what it works with
+
+The model is: Acme creates a user for the agent in the system it already runs, with the permissions that user should have in that system; the issuer only proves the agent is who it says. Three kinds of system by what they can do (see [`docs/federation.md`](../docs/federation.md#which-systems-this-works-with)): **A** takes the token itself (config only), **B** needs the verifier or a hosted gateway in front, **C** (no API or old protocols) is not covered yet and is stated as such. A reference "old system" demo and the hosted gateway are the next slices; the issuer work (R1 to R6) is still the dependency for A.

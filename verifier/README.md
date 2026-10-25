@@ -4,6 +4,8 @@ What a company (say Acme) puts in front of its APIs so that it can know, check a
 
 Zero dependencies, no build, Node 20 or later.
 
+Use it when the system you protect cannot check an outside token itself (kind B in [Which systems this works with](../docs/federation.md#which-systems-this-works-with)): put it in your own API gateway or reverse proxy. A system that can take the token itself needs no verifier, only configuration. A system with no API is not covered.
+
 ```js
 import { createVerifier, aidMiddleware } from '@agentmessaging/aid-verifier'
 

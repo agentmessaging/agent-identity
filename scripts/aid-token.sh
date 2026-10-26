@@ -28,6 +28,8 @@ source "${SCRIPT_DIR}/aid-helper.sh"
 # Arguments
 # =============================================================================
 
+ORIG_ARGS=("$@")
+WAIT_SECONDS=0
 AUTH_URL=""
 RESOURCE_URL=""
 AUDIENCE_URL=""
@@ -56,6 +58,8 @@ show_help() {
     echo "  --quiet, -q             Output only the access token (for piping)"
     echo "  --audience URL          The service the token is for (RFC 8707 resource). The token's aud is then"
     echo "                          exactly this service. It must be registered at the auth server."
+    echo "  --wait SECONDS          While the registration is waiting for approval, ask again until it is"
+    echo "                          approved or SECONDS pass (default: do not wait). Exit 75 if still pending."
     echo "  --help, -h              Show this help"
     echo ""
     echo "Examples:"
@@ -82,6 +86,10 @@ while [[ $# -gt 0 ]]; do
             ;;
         --audience)
             AUDIENCE_URL="$2"
+            shift 2
+            ;;
+        --wait)
+            WAIT_SECONDS="$2"
             shift 2
             ;;
         --api-key|-k)
@@ -432,9 +440,18 @@ else
         echo "" >&2
 
         case "$ERROR" in
+            authorization_pending)
+                echo "  → Not approved yet. This is not a failure: ask again after a few seconds," >&2
+                echo "    or run with --wait SECONDS. Exit status 75 means 'try again later'." >&2
+                ;;
+            access_denied)
+                echo "  → The registration was rejected or the agent is disabled. Do not retry;" >&2
+                echo "    ask the tenant administrator." >&2
+                ;;
             invalid_grant)
-                echo "  → Agent Identity signature may be invalid or expired." >&2
-                echo "    Check that your agent keys match the registration." >&2
+                echo "  → Either the Agent Identity signature is invalid or expired (check that your keys" >&2
+                echo "    match the registration), or the agent has no role, or its role has no permissions." >&2
+                echo "    In the second case retrying does not help: ask the tenant administrator." >&2
                 ;;
             invalid_target)
                 echo "  → The --audience service is not registered at the auth server, is disabled," >&2
@@ -455,6 +472,27 @@ else
                 echo "  → This agent has been suspended. Contact the admin." >&2
                 ;;
         esac
+    fi
+
+    # Waiting for approval is not a failure: poll, or exit 75 (EX_TEMPFAIL) so a caller can tell it from an error.
+    if [ "$ERROR" = "authorization_pending" ] || [ "$ERROR" = "slow_down" ]; then
+        if [ "$WAIT_SECONDS" -gt 0 ] 2>/dev/null; then
+            INTERVAL=$(echo "$HTTP_BODY" | jq -r '.interval // 5' 2>/dev/null)
+            [ "$ERROR" = "slow_down" ] && INTERVAL=$((INTERVAL + 5))
+            [ "$INTERVAL" -ge 1 ] 2>/dev/null || INTERVAL=5
+            if [ "$WAIT_SECONDS" -gt "$INTERVAL" ]; then
+                sleep "$INTERVAL"
+                # Ask again with a fresh proof (it carries a timestamp): re-run with the time left.
+                ARGS=(); skip=0
+                for a in "${ORIG_ARGS[@]}"; do
+                    if [ "$skip" = 1 ]; then skip=0; continue; fi
+                    if [ "$a" = "--wait" ]; then skip=1; continue; fi
+                    ARGS+=("$a")
+                done
+                exec "$0" "${ARGS[@]}" --wait $((WAIT_SECONDS - INTERVAL))
+            fi
+        fi
+        exit 75
     fi
     exit 1
 fi

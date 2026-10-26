@@ -696,6 +696,19 @@ Admins control agent lifecycle via the registration API:
 | `invalid_scope` | Requested scopes exceed permissions | Try without `--scope` |
 | `agent_suspended` | Agent has been suspended by admin | Contact admin for reactivation |
 
+### Token endpoint: agents that are not usable yet
+
+Auth API v4.49.3 and later refuse the `urn:aid:agent-identity` grant, with no token, unless the agent is approved, active, and its role has at least one permission. Before v4.49.3 it returned a 200 token with an empty scope list.
+
+| Response | Meaning | Client action |
+|----------|---------|---------------|
+| 400 `authorization_pending` | Registration not approved yet | Not a failure. Ask again after the `interval` (default 5 s). Do not cache. |
+| 403 `access_denied` | Rejected or disabled | Stop; ask the tenant admin |
+| 400 `invalid_grant` | No role, or a role without permissions (other causes unchanged) | Stop; ask the tenant admin |
+| 403 `invalid_grant` | Agent suspended (unchanged) | Stop; contact the admin |
+
+`aid-token` exits with status 75 on `authorization_pending` (a caller can tell "wait" from "error"), and `--wait SECONDS` keeps asking until approval or the time is up.
+
 ### Polling Error Responses (RFC 8628)
 
 When an agent polls for registration status, the auth server MUST return one of the following error codes aligned with [RFC 8628 Section 3.5](https://datatracker.ietf.org/doc/html/rfc8628#section-3.5):

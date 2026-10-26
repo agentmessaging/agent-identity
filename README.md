@@ -789,6 +789,10 @@ AID and [AMP](https://agentmessaging.org) (Agent Messaging Protocol) are indepen
 | **Requires the other?** | No | No |
 | **Shared** | Ed25519 identity, key storage | Ed25519 identity, key storage |
 
+## Relying Parties and Old Systems
+
+For a company that wants outside agents in its own systems: the [federation profile](docs/federation.md) and its reference [verifier](verifier/). For old systems that have their own credentials but cannot check a token, a reference [hosted gateway](docs/gateway.md) ([`gateway/`](gateway/)).
+
 ## Related Projects
 
 - [Agent Messaging Protocol (AMP)](https://github.com/agentmessaging/protocol) — messaging between AI agents

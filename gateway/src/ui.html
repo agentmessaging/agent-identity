@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>AID gateway admin</title>
+<style>
+  :root { color-scheme: light dark; --fg: #1a1a1a; --bg: #fff; --muted: #555; --line: #c8c8c8; --accent: #0b5cad; --bad: #a40000; --good: #0a6b2d; }
+  @media (prefers-color-scheme: dark) { :root { --fg: #eee; --bg: #161616; --muted: #aaa; --line: #444; --accent: #6db3ff; --bad: #ff8a8a; --good: #7fdc9a; } }
+  body { font: 16px/1.5 system-ui, sans-serif; color: var(--fg); background: var(--bg); margin: 0 auto; max-width: 70rem; padding: 1rem; }
+  h1 { font-size: 1.4rem; } h2 { font-size: 1.1rem; margin-top: 2rem; }
+  table { border-collapse: collapse; width: 100%; } th, td { border-bottom: 1px solid var(--line); padding: .35rem .5rem; text-align: left; vertical-align: top; overflow-wrap: anywhere; }
+  caption { text-align: left; color: var(--muted); padding-bottom: .25rem; }
+  button, input, select { font: inherit; padding: .3rem .6rem; color: var(--fg); background: var(--bg); border: 1px solid var(--line); border-radius: 4px; }
+  button { cursor: pointer; } button:focus-visible, input:focus-visible, select:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .deny, .error { color: var(--bad); } .allow { color: var(--good); } .muted { color: var(--muted); }
+  #status { min-height: 1.5rem; font-weight: 600; } .row { display: flex; gap: .5rem; flex-wrap: wrap; align-items: end; }
+  label { display: block; font-size: .9rem; color: var(--muted); }
+</style>
+</head>
+<body>
+<h1>AID gateway admin</h1>
+<p class="muted">The admin token stays in this page's memory only. It is never stored and is lost when you close or reload the page. This page makes no requests except to this gateway.</p>
+<form id="login" class="row">
+  <div><label for="token">Admin token</label><input id="token" type="password" autocomplete="off" spellcheck="false" size="40"></div>
+  <button type="submit">Load</button>
+</form>
+<p id="status" role="status" aria-live="polite"></p>
+
+<section aria-labelledby="h-tenants"><h2 id="h-tenants">Tenants</h2><div id="tenants"></div></section>
+<section aria-labelledby="h-reasons"><h2 id="h-reasons">Why requests were refused</h2><div id="reasons"></div></section>
+<section aria-labelledby="h-audit"><h2 id="h-audit">Recent audit records</h2>
+  <div class="row">
+    <div><label for="f-decision">Decision</label><select id="f-decision"><option value="">any</option><option>allow</option><option>deny</option><option>error</option></select></div>
+    <div><label for="f-agent">Agent address or id</label><input id="f-agent" type="text" size="28"></div>
+    <button id="refresh" type="button">Refresh</button>
+  </div>
+  <div id="audit"></div>
+</section>
+
+<script>
+(function () {
+  'use strict'
+  var token = ''
+  var $ = function (id) { return document.getElementById(id) }
+  var status = function (msg) { $('status').textContent = msg }
+
+  function api(method, path, body) {
+    return fetch('/_admin/' + path, {
+      method: method, cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer',
+      headers: Object.assign({ Authorization: 'Bearer ' + token }, body ? { 'Content-Type': 'application/json' } : {}),
+      body: body ? JSON.stringify(body) : undefined
+    }).then(function (r) {
+      return r.json().catch(function () { return {} }).then(function (j) { if (!r.ok) { throw new Error(r.status === 401 ? 'The admin token was refused.' : (j.error || ('error ' + r.status))) } return j })
+    })
+  }
+
+  function el(tag, text, cls) { var e = document.createElement(tag); if (text !== undefined && text !== null) e.textContent = String(text); if (cls) e.className = cls; return e }
+  function table(caption, heads, rows) {
+    var t = el('table'); t.appendChild(el('caption', caption))
+    var tr = el('tr'); heads.forEach(function (h) { var th = el('th', h); th.scope = 'col'; tr.appendChild(th) })
+    var thead = el('thead'); thead.appendChild(tr); t.appendChild(thead)
+    var tb = el('tbody'); rows.forEach(function (r) { tb.appendChild(r) }); t.appendChild(tb)
+    return t
+  }
+  function cell(content, cls) { var td = el('td'); if (content instanceof Node) td.appendChild(content); else td.textContent = content === null || content === undefined ? '' : String(content); if (cls) td.className = cls; return td }
+  function button(label, aria, fn) { var b = el('button', label); b.type = 'button'; b.setAttribute('aria-label', aria); b.addEventListener('click', fn); return b }
+  function act(path, msg) { return api('POST', path).then(function () { status(msg); return load() }).catch(function (e) { status(e.message) }) }
+
+  function renderTenants(list) {
+    var box = $('tenants'); box.textContent = ''
+    if (!list.length) { box.appendChild(el('p', 'No tenants yet.', 'muted')); return Promise.resolve() }
+    return Promise.all(list.map(function (t) {
+      return api('GET', 'tenants/' + encodeURIComponent(t.name) + '/agents').then(function (a) { return { t: t, agents: a.agents } })
+    })).then(function (all) {
+      all.forEach(function (x) {
+        var t = x.t
+        var head = el('h3', t.name + (t.displayName ? ' (' + t.displayName + ')' : ''))
+        box.appendChild(head)
+        var line = el('p', 'Upstream ' + t.upstream + '. ' + t.catalogEntries + ' catalog entries. ')
+        var state = el('strong', t.disabled ? 'DISABLED' : 'enabled', t.disabled ? 'deny' : 'allow')
+        line.appendChild(state); line.appendChild(document.createTextNode(' '))
+        line.appendChild(t.disabled
+          ? button('Enable tenant', 'Enable tenant ' + t.name, function () { act('tenants/' + encodeURIComponent(t.name) + '/enable', 'Tenant ' + t.name + ' enabled.') })
+          : button('Disable tenant', 'Disable tenant ' + t.name, function () { if (confirm('Disable tenant ' + t.name + '? Every agent stops at once.')) act('tenants/' + encodeURIComponent(t.name) + '/disable', 'Tenant ' + t.name + ' disabled.') }))
+        box.appendChild(line)
+        var rows = x.agents.map(function (a) {
+          var tr = el('tr')
+          tr.appendChild(cell(a.key)); tr.appendChild(cell(a.upstreamUser || ''))
+          tr.appendChild(cell(a.hasCredential ? a.credentialType : 'none', a.hasCredential ? '' : 'deny'))
+          tr.appendChild(cell(a.disabled ? 'disabled' : 'enabled', a.disabled ? 'deny' : 'allow'))
+          var p = 'tenants/' + encodeURIComponent(t.name) + '/agents/' + encodeURIComponent(a.key) + '/'
+          tr.appendChild(cell(a.disabled
+            ? button('Enable', 'Enable agent ' + a.key, function () { act(p + 'enable', 'Agent ' + a.key + ' enabled.') })
+            : button('Disable', 'Disable agent ' + a.key, function () { if (confirm('Disable agent ' + a.key + '?')) act(p + 'disable', 'Agent ' + a.key + ' disabled.') })))
+          return tr
+        })
+        box.appendChild(table('Agents of ' + t.name + ' (credentials are never shown)', ['Agent', 'User in the old system', 'Credential', 'State', 'Action'], rows))
+      })
+    })
+  }
+
+  function renderAudit(records) {
+    var counts = {}
+    records.forEach(function (r) { if (r.decision !== 'allow') counts[r.reason] = (counts[r.reason] || 0) + 1 })
+    var reasons = $('reasons'); reasons.textContent = ''
+    var keys = Object.keys(counts).sort(function (a, b) { return counts[b] - counts[a] })
+    if (!keys.length) reasons.appendChild(el('p', 'No refusals in the recent records.', 'muted'))
+    else reasons.appendChild(table('Count of refusals by reason code (recent records)', ['Reason', 'Count'], keys.map(function (k) { var tr = el('tr'); tr.appendChild(cell(k)); tr.appendChild(cell(counts[k])); return tr })))
+    var box = $('audit'); box.textContent = ''
+    box.appendChild(table('Newest first', ['Time', 'Tenant', 'Agent', 'Request', 'Permission', 'Decision', 'Reason', 'Upstream', 'ms'], records.map(function (r) {
+      var tr = el('tr')
+      tr.appendChild(cell(r.ts)); tr.appendChild(cell(r.tenant)); tr.appendChild(cell(r.agentAddress || r.agentId || ''))
+      tr.appendChild(cell(r.method + ' ' + (r.pathTemplate || r.pathSample || '')))
+      tr.appendChild(cell(r.permission || '')); tr.appendChild(cell(r.decision, r.decision)); tr.appendChild(cell(r.reason))
+      tr.appendChild(cell(r.upstreamStatus === null || r.upstreamStatus === undefined ? '' : r.upstreamStatus)); tr.appendChild(cell(r.latencyMs))
+      return tr
+    })))
+  }
+
+  function load() {
+    var q = new URLSearchParams({ limit: '200' })
+    if ($('f-decision').value) q.set('decision', $('f-decision').value)
+    if ($('f-agent').value) q.set('agent', $('f-agent').value)
+    return api('GET', 'tenants').then(function (t) { return renderTenants(t.tenants) })
+      .then(function () { return api('GET', 'audit?' + q.toString()) })
+      .then(function (a) { renderAudit(a.records); status('Loaded.') })
+      .catch(function (e) { status(e.message) })
+  }
+
+  $('login').addEventListener('submit', function (ev) { ev.preventDefault(); token = $('token').value; $('token').value = ''; status('Loading...'); load() })
+  $('refresh').addEventListener('click', function () { if (token) load(); else status('Enter the admin token first.') })
+}())
+</script>
+</body>
+</html>

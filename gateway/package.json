@@ -6,7 +6,7 @@
   "main": "src/index.js",
   "bin": { "aid-gateway": "bin/aid-gateway.js" },
   "exports": { ".": "./src/index.js" },
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=22" },
   "scripts": { "test": "node --test \"test/*.test.js\"" },
   "license": "MIT",
   "private": true

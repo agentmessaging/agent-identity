@@ -10,7 +10,7 @@ It checks that Lola gets a token whose audience is exactly the old system, works
 
 ## Run it
 
-You need the `auth-api` checkout on the `feat/aid-federation-issuer` branch (private), Postgres, Ruby 3.4, `bundle install` done, Node 20+ and `jq` and OpenSSL 3 for the client.
+You need the `auth-api` checkout on the `feat/aid-federation-issuer` branch (private), Postgres, Ruby 3.4, `bundle install` done, Node 22+ and `jq` and OpenSSL 3 for the client.
 
 ```bash
 export AUTH_API_DIR=/path/to/auth-api  E2E_DIR=$(mktemp -d)

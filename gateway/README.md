@@ -2,7 +2,7 @@
 
 The gateway for old systems that have their own credentials (API key, basic auth, their own OAuth client) but cannot check an outside token. The agent calls it with its AID token; it checks the token with the reference [verifier](../verifier/), checks the request against the company's permission catalog, swaps in the credential of the agent's own user in the old system, forwards the request, and writes an audit record. The agent never sees the credential.
 
-Zero dependencies, no build, Node 20 or later. It imports `../verifier/src`, so keep the two directories together.
+Zero dependencies, no build, Node 22 or later. It imports `../verifier/src`, so keep the two directories together.
 
 ```bash
 npm test                                   # includes the end-to-end demo

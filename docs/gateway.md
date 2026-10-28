@@ -58,7 +58,7 @@ Status codes the agent sees: `400` bad request target, `401` token not good, `40
 ## Running it
 
 ```bash
-cd gateway && npm test                     # node --test, no install step, Node 20+
+cd gateway && npm test                     # node --test, no install step, Node 22+
 node bin/aid-gateway.js init --dir ./data  # data directory, a sample tenant, a master key and an admin token to keep
 export AID_GATEWAY_MASTER_KEY=...          # 32 random bytes, base64: openssl rand -base64 32
 export AID_GATEWAY_ADMIN_TOKEN=...         # at least 32 characters

@@ -3,7 +3,7 @@
 Runs the idea in [`docs/federation.md`](../../docs/federation.md) end to end, on one machine, with nothing to sign up for:
 
 ```bash
-node examples/legacy-system-demo/run-demo.js        # Node 20+
+node examples/legacy-system-demo/run-demo.js        # Node 22+
 ```
 
 **The story.** Acme runs an old system (a CRM here; it could be an ERP or a till). Acme made a **user "lola"** in it, with permission to read and create contacts. Acme told the old system to trust an outside identity provider. The agent Lola proves she holds her key to that provider, gets a token meant for the old system, and presents it. The old system sees **lola**, not a shared account and not a human's password, and its own permissions decide what she may do. It then shows what should not work: a token for another service, a forged one, an expired one, an agent Acme never made a user for, and a suspended agent.

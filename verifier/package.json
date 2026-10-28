@@ -5,7 +5,7 @@
   "type": "module",
   "main": "src/index.js",
   "exports": { ".": "./src/index.js" },
-  "engines": { "node": ">=20" },
+  "engines": { "node": ">=22" },
   "scripts": { "test": "node --test \"test/*.test.js\"" },
   "license": "MIT",
   "private": true

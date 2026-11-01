@@ -808,7 +808,9 @@ For a company that wants outside agents in its own systems: the [federation prof
 
 ## Related Projects
 
-- [Agent Messaging Protocol (AMP)](https://github.com/agentmessaging/protocol) — messaging between AI agents
+- [Agent Messaging Protocol (AMP)](https://github.com/agentmessaging/protocol) ([agentmessaging.org](https://agentmessaging.org)) — messaging between AI agents
+- [Agent Actions Protocol (AAP)](https://github.com/agentmessaging/agent-actions) ([agentactions.org](https://agentactions.org)) — structured UI-to-agent interactions
+- [Agent Files Protocol (AFP)](https://github.com/agentmessaging/agent-files) ([agentfiles.org](https://agentfiles.org)) — file sharing between agents and people through S3-compatible storage
 - [AMP Claude Plugin](https://github.com/agentmessaging/claude-plugin) — AMP integration for Claude Code
 - [23blocks Authentication API](https://github.com/23blocks/blocks-auth-api) — reference auth server with AID support
 

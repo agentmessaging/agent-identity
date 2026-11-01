@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+### Docs: related protocols, 2026-11-01
+
+- `README.md`: Related Projects now lists AAP (agentactions.org) and AFP (agentfiles.org) next to AMP, with site and repo links. No script or plugin change, so no version bump.
+
 ## 0.4.1
 
 ### Security: review and updates, 2026-10-28

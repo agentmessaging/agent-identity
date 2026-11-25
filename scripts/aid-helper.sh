@@ -327,7 +327,7 @@ generate_keypair() {
 # Ref: https://w3c-ccg.github.io/did-method-key/ (Ed25519 multicodec 0xed).
 #
 # Usage: derive_did_key [public.pem]   (defaults to the agent's public key)
-# Requires: openssl, python3 (for base58btc).
+# Requires: openssl, and python3 or node (for base58btc; Windows has no python3).
 #
 derive_did_key() {
     require_openssl
@@ -335,6 +335,21 @@ derive_did_key() {
     if [ ! -f "${public_key}" ]; then
         echo "Error: public key not found: ${public_key}" >&2
         return 1
+    fi
+    if ! python3 -c 'import sys' >/dev/null 2>&1; then
+        # No working python3 (Windows has none, or only the Microsoft Store stub): node does the base58btc
+        local hex
+        hex=$($OPENSSL_BIN pkey -pubin -in "${public_key}" -outform DER 2>/dev/null | tail -c 32 | od -An -v -tx1 | tr -d ' \n')
+        if [ ${#hex} -ne 64 ]; then echo "Error: could not read Ed25519 public key" >&2; return 1; fi
+        command -v node >/dev/null 2>&1 || { echo "Error: deriving a did:key needs python3 or node" >&2; return 1; }
+        node -e '
+const alpha = "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz"
+const mc = Buffer.from("ed01" + process.argv[1], "hex") // multicodec prefix for ed25519-pub, then the raw key
+let n = BigInt("0x" + mc.toString("hex")), s = ""
+while (n > 0n) { s = alpha[Number(n % 58n)] + s; n /= 58n }
+for (const b of mc) { if (b === 0) s = "1" + s; else break }
+console.log("did:key:z" + s)' "$hex"
+        return
     fi
     python3 - "${public_key}" <<'PYEOF'
 import subprocess, sys

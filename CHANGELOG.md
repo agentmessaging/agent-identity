@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+### Native Windows (Git Bash), 2026-11-25
+
+AI Maestro runs on Windows without WSL (23blocks-OS/ai-maestro, F041); the AID scripts run there in Git Bash.
+
+- `aid-register`, `aid-request`, `aid-token`: request bodies go to curl on stdin (`-d @- <<<"$body"`). Git for Windows' curl converts its arguments to the ANSI code page, which mangled non-ASCII text.
+- `aid-helper` `derive_did_key`: when python3 does not work (Windows has none, or only the Microsoft Store stub), node does the base58btc encoding. Same did:key as the python3 path. No version bump.
+
 ### Docs: related protocols, 2026-11-01
 
 - `README.md`: Related Projects now lists AAP (agentactions.org) and AFP (agentfiles.org) next to AMP, with site and repo links. No script or plugin change, so no version bump.

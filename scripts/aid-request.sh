@@ -332,7 +332,7 @@ fi
 HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" \
     -X POST "$REQUEST_URL" \
     "${CURL_HEADERS[@]}" \
-    -d "$REQUEST_BODY" \
+    -d @- <<<"$REQUEST_BODY" \
     --connect-timeout 10 \
     --max-time 30 \
     2>/dev/null) || {

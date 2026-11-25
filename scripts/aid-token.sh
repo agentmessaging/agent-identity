@@ -388,7 +388,7 @@ HTTP_RESPONSE=$(curl -s -w "\n%{http_code}" \
     -X POST "$TOKEN_URL" \
     -H "Content-Type: application/x-www-form-urlencoded" \
     ${API_KEY:+-H "X-Api-Key: ${API_KEY}"} \
-    -d "$FORM_DATA" \
+    -d @- <<<"$FORM_DATA" \
     --connect-timeout 10 \
     --max-time 30 \
     2>/dev/null) || {
